@@ -1,7 +1,7 @@
 import imgGimp from "../assets/Logo-gimp.jpg";
 import imgcovid from "../assets/Image3.png";
 import imgaide from "../assets/Image4.png";
-import imgImpr from "../assets/Image5.jpg";
+import imgImpr from "../assets/image5.jpg";
 
 
 export const CATEGORIES = [
