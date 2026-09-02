@@ -1,12 +1,7 @@
 import useReveal from "../hooks/useReveal";
 import EventCard from "../components/EventCard";
 import { UPCOMING_EVENTS, PAST_EVENTS } from "../data/events";
-
-/* ===================================================================
-   PHOTO D'INTRODUCTION DE LA PAGE ÉVÉNEMENTS
-   Pose ton fichier dans  src/assets/  puis adapte le nom ci-dessous.
-   =================================================================== */
-import atelierPleinAir from "../assets/Image 8.jpg";
+import atelierPleinAir from "../assets/Image8.jpg";
 
 const INTRO_ALT = "Atelier informatique en plein air lors de la fête du village";
 

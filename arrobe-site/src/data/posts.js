@@ -1,13 +1,8 @@
-/* ===================================================================
-   TES ARTICLES
-   -------------------------------------------------------------------
-   image        : chemin de ta photo, ex. "/images/blog/tuto-gimp.jpg"
-   date         : format AAAA-MM-JJ, sert au tri « plus récents / anciens »
-   readingTime  : en minutes, sert au tri « temps de lecture »
-   views        : compteur de vues (statique pour l'instant, il viendra
-                  de la base de données plus tard)
-   category     : doit correspondre à un identifiant de CATEGORIES
-   =================================================================== */
+import imgGimp from "../assets/Logo-gimp.jpg";
+import imgcovid from "../assets/Image3.png";
+import imgaide from "../assets/Image4.png";
+import imgImpr from "../assets/Image5.jpg";
+
 
 export const CATEGORIES = [
   { id: "all", label: "Tous" },
@@ -20,13 +15,13 @@ export const POSTS = [
     id: "tuto-gimp",
     title: "TUTO GIMP",
     excerpt:
-      "Apprenez à retoucher vos photos et créer des visuels facilement grâce aux bases du logiciel libre GIMP.",
+    "Apprenez à retoucher vos photos et créer des visuels facilement grâce aux bases du logiciel libre GIMP.",
     category: "tuto",
     date: "2024-05-18",
     readingTime: 6,
     views: 36,
-    // image: "/images/blog/tuto-gimp.jpg",
-    image: "https://placehold.co/800x600/f0f2f7/1e2e5e?text=TUTO+GIMP",
+    image:imgGimp,
+    //image: "https://placehold.co/800x600/f0f2f7/1e2e5e?text=TUTO+GIMP",
   },
   {
     id: "covid-19",
@@ -37,8 +32,8 @@ export const POSTS = [
     date: "2024-03-02",
     readingTime: 4,
     views: 36,
-    // image: "/images/blog/covid-19.jpg",
-    image: "https://placehold.co/800x600/1e2e5e/ffffff?text=Mobilisation+COVID",
+    image:imgcovid,
+    //image: "https://placehold.co/800x600/1e2e5e/ffffff?text=Mobilisation+COVID",
   },
   {
     id: "aide-soignants",
@@ -49,8 +44,8 @@ export const POSTS = [
     date: "2023-11-24",
     readingTime: 3,
     views: 36,
-    // image: "/images/blog/aide-soignants.jpg",
-    image: "https://placehold.co/800x600/1e2e5e/ffffff?text=Aide+aux+soignants",
+    image:imgaide,
+    //image: "https://placehold.co/800x600/1e2e5e/ffffff?text=Aide+aux+soignants",
   },
   {
     id: "imprimante-3d",
@@ -61,8 +56,8 @@ export const POSTS = [
     date: "2023-09-09",
     readingTime: 8,
     views: 36,
-    // image: "/images/blog/imprimante-3d.jpg",
-    image: "https://placehold.co/800x600/1e2e5e/ffffff?text=Imprimante+3D",
+    image:imgImpr,
+    //image: "https://placehold.co/800x600/1e2e5e/ffffff?text=Imprimante+3D",
   },
 ];
 

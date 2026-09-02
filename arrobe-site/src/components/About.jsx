@@ -1,10 +1,5 @@
 import useReveal from "../hooks/useReveal";
-
-/* ===================================================================
-   PHOTO DE LA SECTION « QUI SOMMES-NOUS ? »
-   Pose ton fichier dans  src/assets/  puis adapte le nom ci-dessous.
-   =================================================================== */
-import photoAssociation from "../assets/Image 3.png";
+import photoAssociation from "../assets/Image3.png";
 
 const ABOUT_ALT = "Deux bénévoles de l'association lors d'un atelier";
 

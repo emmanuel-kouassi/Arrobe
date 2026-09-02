@@ -1,10 +1,6 @@
-/* ===================================================================
-   TES ÉVÉNEMENTS
-   -------------------------------------------------------------------
-   Pour chaque événement, remplace la valeur de "image" par le chemin
-   de ta photo, par exemple : image: "/images/fete-village-2023.jpg"
-   Mets null pour afficher un cadre gris (affiche pas encore prête).
-   =================================================================== */
+import imgFete from "../assets/Image8.jpg";
+import imgPot from "../assets/Image6.png";
+import imgPython from "../assets/images(1).jpg";
 
 export const UPCOMING_EVENTS = [
   {
@@ -52,8 +48,8 @@ export const PAST_EVENTS = [
     organizer: "Association arrobe",
     place: "saint germain sur morin, France",
     schedule: "3 septembre 2023 - 10:00",
-    // image: "/images/fete-village-2023.jpg",
-    image: "https://placehold.co/600x420/1e2e5e/ffffff?text=Fete+du+village",
+    image:imgFete,
+    //image: "https://placehold.co/600x420/1e2e5e/ffffff?text=Fete+du+village",
   },
   {
     id: "past-2",
@@ -64,8 +60,8 @@ export const PAST_EVENTS = [
     organizer: "Association arrobe",
     place: "saint germain sur morin, France",
     schedule: "29 Octobre 2021 - 14:00",
-    // image: "/images/pot-depart-jean-paul.jpg",
-    image: "https://placehold.co/600x420/1e2e5e/ffffff?text=Pot+de+depart",
+    image:imgPot,
+    //image: "https://placehold.co/600x420/1e2e5e/ffffff?text=Pot+de+depart",
   },
   {
     id: "past-3",
@@ -76,7 +72,7 @@ export const PAST_EVENTS = [
     organizer: "Association arrobe",
     place: "En ligne",
     schedule: "29 Janvier 2020 - 21:00",
-    // image: "/images/formation-python.jpg",
-    image: "https://placehold.co/600x420/1e2e5e/ffffff?text=Formation+Python",
+    image:imgPython,
+    //image: "https://placehold.co/600x420/1e2e5e/ffffff?text=Formation+Python",
   },
 ];

@@ -1,8 +1,4 @@
-/* ===================================================================
-   PHOTO DE FOND DU HERO
-   Pose ton fichier dans  src/assets/  puis adapte le nom ci-dessous.
-   =================================================================== */
-import heroAtelier from "../assets/image 7.jpg";
+import heroAtelier from "../assets/image2.jpg";
 
 export default function Hero() {
   return (

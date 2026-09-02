@@ -13,14 +13,6 @@ function EyeIcon() {
     </svg>
   );
 }
-
-/**
- * Carte d'article.
- * props :
- *   post  -> objet venant de src/data/posts.js
- *   view  -> "grid" ou "list"
- *   index -> position, sert au décalage de l'animation
- */
 export default function PostCard({ post, view = "grid", index = 0 }) {
   const [ref, shown] = useReveal({ threshold: 0.12 });
 
