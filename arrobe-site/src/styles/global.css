@@ -828,9 +828,14 @@ input:focus-visible {
 /* --- Grille des cartes ------------------------------------------ */
 .event-grid {
   display: grid;
-  /* min(100%, 390px) : la piste ne peut jamais dépasser le conteneur.
-     C'était LA cause du débordement horizontal sur mobile. */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr));
+  /* auto-fill et non auto-fit : auto-fit efface les pistes vides, si
+     bien qu'une carte seule s'étirerait sur toute la largeur. Avec
+     auto-fill les pistes vides subsistent, donc une carte garde la
+     même taille qu'elle soit seule ou accompagnée.
+
+     min(100%, 390px) : la piste ne peut jamais dépasser le conteneur.
+     C'était la cause du débordement horizontal sur mobile. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 390px), 1fr));
   gap: clamp(32px, 4vw, 60px);
   align-items: start;
 }
@@ -1180,7 +1185,9 @@ input:focus-visible {
 }
 
 .post-grid--grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  /* auto-fill : une carte seule ne s'étire pas sur toute la largeur.
+     Voir le commentaire de .event-grid. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
   align-items: start;
 }
 
