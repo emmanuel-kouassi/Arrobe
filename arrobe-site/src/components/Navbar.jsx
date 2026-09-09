@@ -1,9 +1,4 @@
 import { useEffect, useState } from "react";
-
-/* ===================================================================
-   TON LOGO
-   Pose ton fichier dans  src/assets/  puis adapte le nom ci-dessous.
-   =================================================================== */
 import logoIcone from "../assets/logo_icone.png";
 
 const LOGO_ALT = "Logo de l'association @Rrobe";
