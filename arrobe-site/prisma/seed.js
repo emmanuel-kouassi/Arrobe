@@ -17,7 +17,7 @@
  * ===================================================================
  */
 
-import { PrismaClient } from "./generated/client/client.js";
+import { PrismaClient } from "./generated/client/client.ts";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
