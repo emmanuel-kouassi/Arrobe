@@ -25,9 +25,10 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  // Depuis Prisma 7, `url` et `directUrl` ne sont plus acceptés ici.
+  // L'URL des migrations vit dans prisma.config.js, celle de
+  // l'application est passée à l'adaptateur dans le code.
+  provider = "postgresql"
 }
 
 // -------------------------------------------------------------------

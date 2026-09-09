@@ -5,6 +5,19 @@ import atelierPleinAir from "../assets/Image8.jpg";
 
 const INTRO_ALT = "Atelier informatique en plein air lors de la fête du village";
 
+/**
+ * Affiché à la place de la grille quand la liste est vide.
+ * Tant que la base est neuve, c'est ce que verront les visiteurs.
+ */
+function EmptyState({ children }) {
+  return (
+    <p className="empty">
+      <span className="empty__title">Aucun événement pour le moment</span>
+      {children}
+    </p>
+  );
+}
+
 export default function Events() {
   const [titleRef, titleShown] = useReveal();
   const [imgRef, imgShown] = useReveal({ threshold: 0.2 });
@@ -66,16 +79,23 @@ export default function Events() {
             Prochain évènement
           </h2>
 
-          <div className="event-grid">
-            {UPCOMING_EVENTS.map((event, i) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                cta="S'inscrire"
-                index={i}
-              />
-            ))}
-          </div>
+          {UPCOMING_EVENTS.length === 0 ? (
+            <EmptyState>
+              Aucune date n'est encore programmée. Revenez bientôt&nbsp;: les
+              prochains ateliers seront annoncés ici.
+            </EmptyState>
+          ) : (
+            <div className="event-grid">
+              {UPCOMING_EVENTS.map((event, i) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  cta="S'inscrire"
+                  index={i}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -88,11 +108,18 @@ export default function Events() {
             Evenement passés
           </h2>
 
-          <div className="event-grid">
-            {PAST_EVENTS.map((event, i) => (
-              <EventCard key={event.id} event={event} cta="Voir" index={i} />
-            ))}
-          </div>
+          {PAST_EVENTS.length === 0 ? (
+            <EmptyState>
+              Les événements déjà passés apparaîtront ici une fois la date
+              écoulée.
+            </EmptyState>
+          ) : (
+            <div className="event-grid">
+              {PAST_EVENTS.map((event, i) => (
+                <EventCard key={event.id} event={event} cta="Voir" index={i} />
+              ))}
+            </div>
+          )}
         </div>
       </section>
     </main>

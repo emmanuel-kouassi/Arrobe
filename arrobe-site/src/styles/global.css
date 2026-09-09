@@ -1138,9 +1138,25 @@ input:focus-visible {
   color: var(--white);
 }
 
+/* --- État vide, partagé par le blog et les événements -------------
+   Affiché quand la base ne contient encore rien : mieux vaut une
+   phrase claire qu'une grille vide sans explication. */
+.empty,
 .blog__empty {
-  padding: 48px 0;
+  padding: 44px 26px;
+  border: 1.5px dashed #cfd6e6;
+  border-radius: 16px;
+  background: var(--white);
   color: var(--muted);
+  text-align: center;
+}
+
+.empty__title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 /* --- Grille des articles ----------------------------------------- */

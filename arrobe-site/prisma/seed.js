@@ -18,9 +18,22 @@
  */
 
 import { PrismaClient } from "./generated/client/client.js";
+import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+// Prisma 7 exige un « driver adapter » : c'est le pilote pg qui parle
+// à PostgreSQL, Prisma n'embarque plus son propre moteur natif.
+// Ici on utilise DATABASE_URL (la version poolée convient au seed).
+if (!process.env.DATABASE_URL) {
+  console.error(
+    "\n  DATABASE_URL est absent. Renseigne-le dans arrobe-site/.env " +
+      "avant de lancer le seed.\n"
+  );
+  process.exit(1);
+}
+
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 // Coût bcrypt. 12 ≈ 250 ms par vérification sur un CPU récent : assez
 // lent pour décourager une attaque par force brute, assez rapide pour

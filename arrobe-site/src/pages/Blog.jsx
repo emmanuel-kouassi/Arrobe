@@ -131,8 +131,18 @@ export default function Blog() {
           </div>
 
           {visiblePosts.length === 0 ? (
-            <p className="blog__empty">
-              Aucun article dans cette catégorie pour le moment. Revenez bientôt.
+            /* Deux situations très différentes : soit le blog est encore
+               vide, soit le filtre choisi ne renvoie rien. Le message le
+               dit, sinon on laisse croire à un bug. */
+            <p className="empty">
+              <span className="empty__title">
+                {POSTS.length === 0
+                  ? "Aucun article pour le moment"
+                  : "Aucun article dans cette catégorie"}
+              </span>
+              {POSTS.length === 0
+                ? "Les premiers articles de l'association seront publiés ici prochainement."
+                : "Essayez une autre catégorie pour retrouver nos publications."}
             </p>
           ) : (
             <div
