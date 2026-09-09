@@ -1,15 +1,30 @@
 import useReveal from "../hooks/useReveal";
 
-function EyeIcon() {
+/**
+ * Anciennement un compteur de vues. La base ne stocke pas les vues :
+ * les compter demanderait une écriture à chaque affichage, avec les
+ * questions de robots et de vie privée qui vont avec. On affiche le
+ * temps de lecture, qui est une information utile et déjà en base.
+ */
+function ClockIcon() {
   return (
     <svg className="post__eye" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.7"
       />
-      <circle cx="12" cy="12" r="2.6" fill="currentColor" />
+      <path
+        d="M12 7v5.3l3.4 2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -27,13 +42,16 @@ export default function PostCard({ post, view = "grid", index = 0 }) {
       </div>
 
       <div className="post__body">
+        {/* Visible uniquement pour l'admin : l'API n'envoie les
+            brouillons qu'aux requêtes authentifiées. */}
+        {post.status === "DRAFT" && <span className="post__draft">Brouillon</span>}
         <h3 className="post__title">{post.title}</h3>
         <p className="post__excerpt">{post.excerpt}</p>
 
         <div className="post__footer">
           <span className="post__views">
-            <EyeIcon />
-            {post.views} Vues
+            <ClockIcon />
+            {post.readingTime} min de lecture
           </span>
 
           <a className="post__cta" href={`#/blog/${post.id}`}>

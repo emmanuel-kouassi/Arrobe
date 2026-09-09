@@ -13,7 +13,9 @@
     "db:seed": "node --env-file-if-exists=.env prisma/seed.js",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "dev:api": "node server/index.js",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

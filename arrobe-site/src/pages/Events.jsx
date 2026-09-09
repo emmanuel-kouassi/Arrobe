@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import useReveal from "../hooks/useReveal";
 import EventCard from "../components/EventCard";
-import { UPCOMING_EVENTS, PAST_EVENTS } from "../data/events";
+import { api } from "../lib/api";
 import atelierPleinAir from "../assets/Image8.jpg";
 
 const INTRO_ALT = "Atelier informatique en plein air lors de la fête du village";
@@ -18,7 +19,67 @@ function EmptyState({ children }) {
   );
 }
 
+/**
+ * Rend une section : chargement, erreur, liste vide ou cartes.
+ * Les quatre états sont traités au même endroit pour qu'aucun ne
+ * puisse être oublié.
+ */
+function EventSection({ state, events, cta, emptyText, error }) {
+  if (state === "loading") {
+    return <p className="empty">Chargement des événements…</p>;
+  }
+  if (state === "error") {
+    return (
+      <p className="empty">
+        <span className="empty__title">Chargement impossible</span>
+        {error}
+      </p>
+    );
+  }
+  if (events.length === 0) {
+    return <EmptyState>{emptyText}</EmptyState>;
+  }
+  return (
+    <div className="event-grid">
+      {events.map((event, i) => (
+        <EventCard key={event.id} event={event} cta={cta} index={i} />
+      ))}
+    </div>
+  );
+}
+
 export default function Events() {
+  // « à venir » / « passés » viennent déjà séparés par l'API, qui
+  // compare la date de chaque événement à l'instant de la requête.
+  const [upcoming, setUpcoming] = useState([]);
+  const [past, setPast] = useState([]);
+  const [state, setState] = useState("loading");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    api
+      .listEvents()
+      .then((data) => {
+        if (cancelled) return;
+        setUpcoming(data.upcoming);
+        setPast(data.past);
+        setState("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message);
+        setState("error");
+      });
+
+    // Évite un setState sur un composant démonté si l'utilisateur
+    // change de page pendant le chargement.
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [titleRef, titleShown] = useReveal();
   const [imgRef, imgShown] = useReveal({ threshold: 0.2 });
   const [textRef, textShown] = useReveal({ threshold: 0.2 });
@@ -79,23 +140,13 @@ export default function Events() {
             Prochain évènement
           </h2>
 
-          {UPCOMING_EVENTS.length === 0 ? (
-            <EmptyState>
-              Aucune date n'est encore programmée. Revenez bientôt&nbsp;: les
-              prochains ateliers seront annoncés ici.
-            </EmptyState>
-          ) : (
-            <div className="event-grid">
-              {UPCOMING_EVENTS.map((event, i) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  cta="S'inscrire"
-                  index={i}
-                />
-              ))}
-            </div>
-          )}
+          <EventSection
+            state={state}
+            events={upcoming}
+            cta="S'inscrire"
+            error={error}
+            emptyText="Aucune date n'est encore programmée. Revenez bientôt&nbsp;: les prochains ateliers seront annoncés ici."
+          />
         </div>
       </section>
 
@@ -108,18 +159,13 @@ export default function Events() {
             Evenement passés
           </h2>
 
-          {PAST_EVENTS.length === 0 ? (
-            <EmptyState>
-              Les événements déjà passés apparaîtront ici une fois la date
-              écoulée.
-            </EmptyState>
-          ) : (
-            <div className="event-grid">
-              {PAST_EVENTS.map((event, i) => (
-                <EventCard key={event.id} event={event} cta="Voir" index={i} />
-              ))}
-            </div>
-          )}
+          <EventSection
+            state={state}
+            events={past}
+            cta="Voir"
+            error={error}
+            emptyText="Les événements déjà passés apparaîtront ici une fois la date écoulée."
+          />
         </div>
       </section>
     </main>

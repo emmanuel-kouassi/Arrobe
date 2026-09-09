@@ -1151,6 +1151,20 @@ input:focus-visible {
   text-align: center;
 }
 
+/* Badge « Brouillon » : n'apparaît que pour l'administrateur connecté,
+   puisque l'API n'envoie les brouillons qu'aux requêtes authentifiées. */
+.post__draft {
+  align-self: flex-start;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(30, 46, 94, 0.1);
+  color: var(--navy);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
 .empty__title {
   display: block;
   margin-bottom: 6px;

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api, ApiError } from "../lib/api";
 
 /* ===================================================================
    LOGO AFFICHÉ DANS LA CARTE DE CONNEXION
@@ -46,11 +47,12 @@ function EyeToggle({ visible }) {
 }
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [identifiant, setIdentifiant] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const goBack = () => {
     // Retour à la page précédente si l'utilisateur vient du site,
@@ -59,19 +61,40 @@ export default function Login() {
     else window.location.hash = "#/";
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const refuse = (message) => {
+    setError(message);
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
+  };
 
-    if (!email.trim() || !password.trim()) {
-      setError("Merci de renseigner votre adresse mail et votre mot de passe.");
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+
+    if (!identifiant.trim() || !password) {
+      refuse("Merci de renseigner votre identifiant et votre mot de passe.");
       return;
     }
 
     setError("");
-    // TODO : brancher ici l'appel à ton API d'authentification.
-    console.log("Connexion demandée pour", email);
+    setBusy(true);
+
+    try {
+      await api.login(identifiant.trim(), password);
+      // Le mot de passe ne reste pas en mémoire une fois utilisé.
+      setPassword("");
+      window.location.hash = "#/administration";
+    } catch (err) {
+      // L'API renvoie volontairement le même message que l'identifiant
+      // soit inconnu ou le mot de passe faux. On le relaie tel quel.
+      const message =
+        err instanceof ApiError && err.status === 0
+          ? "Serveur injoignable. Vérifie que l'API est démarrée."
+          : err.message;
+      refuse(message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -87,14 +110,17 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} noValidate>
             <div className="field" style={{ "--delay": "180ms" }}>
-              <label htmlFor="login-email">Adresse mail :</label>
+              <label htmlFor="login-identifiant">Identifiant :</label>
               <input
-                id="login-email"
-                type="email"
-                autoComplete="email"
-                placeholder="Adresse mail"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="login-identifiant"
+                type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck="false"
+                placeholder="Identifiant"
+                value={identifiant}
+                onChange={(e) => setIdentifiant(e.target.value)}
+                disabled={busy}
               />
             </div>
 
@@ -109,6 +135,7 @@ export default function Login() {
                   placeholder="Mot de passe"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={busy}
                 />
                 <button
                   type="button"
@@ -135,8 +162,8 @@ export default function Login() {
               </p>
             )}
 
-            <button type="submit" className="login__submit">
-              Connexion
+            <button type="submit" className="login__submit" disabled={busy}>
+              {busy ? "Connexion…" : "Connexion"}
             </button>
           </form>
         </section>

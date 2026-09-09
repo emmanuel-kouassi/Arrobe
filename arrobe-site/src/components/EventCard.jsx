@@ -33,6 +33,9 @@ export default function EventCard({ event, cta = "S'inscrire", index = 0 }) {
         </div>
 
         <div className="event__body">
+          {event.status === "DRAFT" && (
+            <span className="post__draft">Brouillon</span>
+          )}
           <h3 className="event__title">{event.title}</h3>
           <p className="event__organizer">Organisateur : {event.organizer}</p>
 
