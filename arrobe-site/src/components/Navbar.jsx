@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+
+/* ===================================================================
+   TON LOGO
+   Pose ton fichier dans  src/assets/  puis adapte le nom ci-dessous.
+   =================================================================== */
 import logoIcone from "../assets/logo_icone.png";
 
 const LOGO_ALT = "Logo de l'association @Rrobe";
@@ -14,12 +19,39 @@ export default function Navbar({ route = "/" }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
+  // Le menu se referme dès qu'on change de page (y compris via le
+  // bouton « précédent » du navigateur). Ajustement pendant le rendu :
+  // c'est le motif recommandé par React, pas d'effet inutile.
+  const [lastRoute, setLastRoute] = useState(route);
+  if (route !== lastRoute) {
+    setLastRoute(route);
+    setOpen(false);
+  }
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  // Menu ouvert : on bloque le défilement derrière, et Échap referme.
+  useEffect(() => {
+    if (!open) return;
+
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   const isActive = (link) => {
     if (link.scrollTo) return false;

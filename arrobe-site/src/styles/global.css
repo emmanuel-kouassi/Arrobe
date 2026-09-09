@@ -45,8 +45,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Garde-fou global : plus aucun débordement horizontal possible.
+   Les causes réelles sont corrigées plus bas ; ceci n'est qu'un filet. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* Les mots très longs (URL, e-mails) ne poussent plus la mise en page. */
+body {
+  overflow-wrap: break-word;
+}
+
 img {
   max-width: 100%;
+  height: auto;
   display: block;
 }
 
@@ -154,6 +168,7 @@ input:focus-visible {
   font-weight: 600;
   border-radius: 8px;
   padding: 11px 22px;
+  min-height: 44px; /* cible tactile minimale */
   background: var(--green);
   color: var(--white);
   transition: background 0.25s var(--ease), transform 0.25s var(--ease),
@@ -254,7 +269,8 @@ input:focus-visible {
   background: none;
   border: 0;
   cursor: pointer;
-  padding: 8px;
+  padding: 10px; /* 26 + 2x10 = 46px : cible tactile OK */
+  margin-right: -10px;
 }
 .nav__burger span {
   display: block;
@@ -281,6 +297,7 @@ input:focus-visible {
   position: relative;
   min-height: 600px;
   height: 88vh;
+  height: 88svh; /* évite le saut lié à la barre d'URL mobile */
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -637,7 +654,7 @@ input:focus-visible {
 
 .footer__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: clamp(32px, 6vw, 72px);
 }
 
@@ -678,79 +695,7 @@ input:focus-visible {
 }
 
 /* ==================================================================
-   11. Responsive
-   ================================================================== */
-@media (max-width: 1080px) {
-  .about__grid {
-    grid-template-columns: 1fr;
-  }
-  .about__media {
-    margin: -40px 0 0;
-    height: 340px;
-  }
-
-  .pricing__card {
-    grid-template-columns: 1fr;
-    gap: 28px;
-  }
-  .pricing__list {
-    border-left: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.22);
-    padding: 22px 0 0;
-  }
-
-  .newsletter__grid {
-    grid-template-columns: 1fr;
-    gap: 30px;
-  }
-}
-
-@media (max-width: 720px) {
-  body {
-    font-size: 16px;
-  }
-
-  .nav__burger {
-    display: block;
-  }
-
-  .nav__links {
-    position: absolute;
-    top: var(--nav-h);
-    left: 0;
-    right: 0;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-    background: var(--navy-bar);
-    padding: 0 var(--gutter);
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.45s var(--ease), padding 0.45s var(--ease);
-  }
-  .nav.is-open .nav__links {
-    max-height: 360px;
-    padding: 14px var(--gutter) 24px;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
-  }
-  .nav__links li {
-    width: 100%;
-    padding: 9px 0;
-  }
-
-  .hero {
-    height: auto;
-    min-height: 540px;
-    padding: 100px 0;
-  }
-
-  .about__media {
-    height: 260px;
-  }
-}
-
-/* ==================================================================
-   12. Page « Nos Evenements »
+   11. Page « Nos Evenements »
    ================================================================== */
 .section--tight {
   padding: clamp(40px, 5vw, 64px) 0;
@@ -883,7 +828,9 @@ input:focus-visible {
 /* --- Grille des cartes ------------------------------------------ */
 .event-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(390px, 1fr));
+  /* min(100%, 390px) : la piste ne peut jamais dépasser le conteneur.
+     C'était LA cause du débordement horizontal sur mobile. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr));
   gap: clamp(32px, 4vw, 60px);
   align-items: start;
 }
@@ -1022,37 +969,8 @@ input:focus-visible {
   box-shadow: 0 8px 18px rgba(20, 162, 106, 0.3);
 }
 
-@media (max-width: 1080px) {
-  .events__intro {
-    grid-template-columns: 1fr;
-  }
-  .events__photo {
-    min-height: 0;
-    aspect-ratio: 16 / 10;
-  }
-  .events__amp {
-    right: 8px;
-  }
-}
-
-@media (max-width: 520px) {
-  .event {
-    grid-template-columns: 62px minmax(0, 1fr);
-    gap: 12px;
-  }
-  .event__day {
-    font-size: 2.2rem;
-  }
-  .event__body {
-    padding: 24px 22px 28px;
-  }
-  .event__title {
-    font-size: 1.3rem;
-  }
-}
-
 /* ==================================================================
-   13. Page « Notre Blog »
+   12. Page « Notre Blog »
    ================================================================== */
 .blog__hero {
   position: relative;
@@ -1136,7 +1054,9 @@ input:focus-visible {
 .blog__sort select {
   border: 1px solid #cfd6e6;
   border-radius: 8px;
-  padding: 9px 14px;
+  padding: 10px 14px;
+  min-height: 44px;
+  font-size: 1rem; /* 16px : empêche le zoom auto d'iOS Safari au focus */
   background: var(--white);
   color: var(--ink);
   cursor: pointer;
@@ -1157,8 +1077,8 @@ input:focus-visible {
 }
 
 .blog__view {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 1px solid #cfd6e6;
@@ -1193,6 +1113,9 @@ input:focus-visible {
 }
 
 .chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 9px 24px;
   border: 1px solid #cfd6e6;
   border-radius: 999px;
@@ -1227,7 +1150,7 @@ input:focus-visible {
 }
 
 .post-grid--grid {
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
   align-items: start;
 }
 
@@ -1306,7 +1229,8 @@ input:focus-visible {
 .post__cta {
   display: inline-flex;
   align-items: center;
-  padding: 10px 22px;
+  min-height: 44px;
+  padding: 12px 22px;
   border-radius: 6px;
   background: var(--navy);
   color: var(--white);
@@ -1359,35 +1283,12 @@ input:focus-visible {
   padding-top: 22px;
 }
 
-@media (max-width: 760px) {
-  .post--list {
-    grid-template-columns: 1fr;
-  }
-  .post--list .post__media {
-    aspect-ratio: 16 / 10;
-    min-height: 0;
-  }
-  .post--list .post__body {
-    padding: 24px 22px 26px;
-  }
-  .post--list .post__title {
-    font-size: 1.25rem;
-  }
-
-  .post-grid--grid {
-    grid-template-columns: 1fr;
-  }
-
-  .blog__toolbar {
-    align-items: flex-start;
-  }
-}
-
 /* ==================================================================
-   14. Page « Connexion »
+   13. Page « Connexion »
    ================================================================== */
 .login {
   min-height: calc(100vh - var(--nav-h));
+  min-height: calc(100svh - var(--nav-h));
   margin-top: var(--nav-h);
   padding: clamp(28px, 5vw, 56px) 0 clamp(60px, 8vw, 100px);
   display: flex;
@@ -1515,16 +1416,16 @@ input:focus-visible {
   position: relative;
 }
 .field__wrap input {
-  padding-right: 52px;
+  padding-right: 58px;
 }
 
 .field__toggle {
   position: absolute;
-  right: 8px;
+  right: 6px;
   top: 50%;
   transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 0;
@@ -1615,7 +1516,7 @@ input:focus-visible {
 }
 
 /* ==================================================================
-   15. Page « Contact »
+   14. Page « Contact »
    ================================================================== */
 .contact__hero {
   position: relative;
@@ -1761,7 +1662,7 @@ input:focus-visible {
 
 .form__row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -2008,20 +1909,286 @@ input:focus-visible {
   padding: 0 24px 22px;
 }
 
-@media (max-width: 1000px) {
+/* ==================================================================
+   15. RESPONSIVE — système unique
+   ------------------------------------------------------------------
+   Deux points de rupture, et deux seulement :
+
+     mobile    : jusqu'à 600px      -> @media (max-width: 600px)
+     tablette  : 601px à 1024px     -> @media (max-width: 1024px)
+     desktop   : au-delà de 1024px  -> aucune media query (styles de base)
+
+   Toutes les règles adaptatives du site vivent ici. Les anciens
+   points de rupture (520 / 560 / 720 / 760 / 1000 / 1080) ont été
+   supprimés. Le desktop n'est jamais touché par ce bloc.
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   TABLETTE ET EN DESSOUS  (<= 1024px)
+   ------------------------------------------------------------------ */
+@media (max-width: 1024px) {
+  /* --- Navigation : menu burger ------------------------------------
+     Passé de 720px à 1024px : à 768px les 4 liens + le bouton
+     « Se connecter » tenaient dans 579px sur 691px utiles, donc
+     à l'étroit et sans zone de respiration. */
+  .nav__burger {
+    display: block;
+  }
+
+  .nav__links {
+    position: absolute;
+    top: var(--nav-h);
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: var(--navy-bar);
+    padding: 0 var(--gutter);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.45s var(--ease), padding 0.45s var(--ease);
+  }
+  .nav.is-open .nav__links {
+    /* Hauteur souple : le menu ne coupe plus si on ajoute un lien. */
+    max-height: min(70svh, 440px);
+    overflow-y: auto;
+    padding: 10px var(--gutter) 22px;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .nav__links li {
+    width: 100%;
+    padding: 0;
+  }
+  /* Lien en bloc : toute la ligne devient cliquable (44px de haut). */
+  .nav__links .nav__link {
+    display: block;
+    padding: 13px 0;
+    font-size: 1.05rem;
+  }
+  .nav__links .btn {
+    display: flex;
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  /* --- Accueil ------------------------------------------------------ */
+  .about__grid {
+    grid-template-columns: 1fr;
+  }
+  .about__media {
+    margin: -40px 0 0;
+    height: 340px;
+  }
+
+  .pricing__card {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .pricing__list {
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+    padding: 22px 0 0;
+  }
+
+  .newsletter__grid {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  /* --- Événements --------------------------------------------------- */
+  .events__intro {
+    grid-template-columns: 1fr;
+  }
+  .events__photo {
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+  }
+  .events__amp {
+    right: 8px;
+  }
+
+  /* --- Contact ------------------------------------------------------ */
   .contact__grid {
     grid-template-columns: 1fr;
   }
+
+  /* --- Champs de saisie ---------------------------------------------
+     iOS Safari zoome la page quand un champ focalisé fait moins de
+     16px. On plancher tous les champs à 16px sur tactile. */
+  .field input,
+  .form__field input,
+  .form__field select,
+  .form__field textarea,
+  .newsletter__form input,
+  .blog__sort select {
+    font-size: 16px;
+  }
+
+  /* --- Pied de page : liens cliquables au doigt ---------------------- */
+  .footer li {
+    padding: 0;
+  }
+  .footer a {
+    display: inline-block;
+    padding-block: 10px; /* padding-block seul : l'effet :hover padding-left reste */
+  }
 }
 
-@media (max-width: 560px) {
+/* ------------------------------------------------------------------
+   MOBILE  (<= 600px)
+   ------------------------------------------------------------------ */
+@media (max-width: 600px) {
+  :root {
+    --nav-h: 64px;
+  }
+
+  .nav__logo img {
+    height: 34px;
+  }
+
+  /* --- Hero ---------------------------------------------------------- */
+  .hero {
+    height: auto;
+    min-height: 520px;
+    padding: 88px 0;
+  }
+
+  /* --- Accueil ------------------------------------------------------- */
+  .about__media {
+    height: 240px;
+  }
+
+  /* --- Cartes événement : la pastille de date passe au-dessus --------
+     Avant, la colonne de 62px mangeait un cinquième de l'écran et la
+     carte se retrouvait à 253px. Là, la carte prend toute la largeur. */
+  .event {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .event__date {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 10px;
+    text-align: left;
+    padding-top: 0;
+  }
+  .event__day {
+    font-size: 2.4rem;
+  }
+  .event__body {
+    padding: 22px 20px 26px;
+  }
+  .event__title {
+    font-size: 1.25rem;
+  }
+  .event__meta {
+    margin-bottom: 18px;
+  }
+  .btn-outline {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  /* --- Blog ---------------------------------------------------------- */
+  .blog__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .blog__sort {
+    flex-wrap: wrap;
+  }
+  .blog__sort select {
+    flex: 1 1 150px;
+    min-width: 0;
+  }
+  .blog__chips {
+    gap: 10px;
+    margin: 20px 0 28px;
+  }
+  .chip {
+    padding: 9px 18px;
+  }
+
+  .post__body {
+    padding: 22px 20px 24px;
+  }
+  .post__footer {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .post--list {
+    grid-template-columns: 1fr;
+  }
+  .post--list .post__media {
+    aspect-ratio: 16 / 10;
+    min-height: 0;
+  }
+  .post--list .post__body {
+    padding: 22px 20px 24px;
+  }
+  .post--list .post__title {
+    font-size: 1.2rem;
+  }
+
+  /* --- Newsletter : le champ et le bouton s'empilent ------------------ */
+  .newsletter__form {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    border-radius: 16px;
+    padding: 8px;
+  }
+  .newsletter__form input {
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .newsletter__submit {
+    width: 100%;
+  }
+  .newsletter__note {
+    font-size: 0.88rem; /* 12,5px -> 14px : lisible */
+  }
+
+  /* --- Contact -------------------------------------------------------- */
+  .contact__form-card {
+    padding: 26px 20px 30px;
+  }
   .form__row {
     grid-template-columns: 1fr;
     gap: 0;
   }
+  .info {
+    padding: 18px 18px;
+  }
   .contact__map img,
   .contact__map iframe {
     aspect-ratio: 16 / 10;
+  }
+  .faq__head {
+    padding: 18px;
+    gap: 14px;
+    font-size: 1rem;
+  }
+  .faq__panel p {
+    padding: 0 18px;
+  }
+  .faq.is-open .faq__panel p {
+    padding: 0 18px 20px;
+  }
+
+  /* --- Connexion ------------------------------------------------------ */
+  .login__card {
+    padding: 32px 22px 36px;
+    border-radius: 18px;
+  }
+
+  /* --- Pied de page ---------------------------------------------------- */
+  .footer__bottom {
+    font-size: 0.88rem;
   }
 }
 
@@ -2029,6 +2196,10 @@ input:focus-visible {
    16. Accessibilité : mouvement réduit
    ================================================================== */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {
