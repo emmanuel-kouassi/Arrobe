@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Editor from "./Editor";
+import { ARTICLE_CATEGORIES, EVENT_CATEGORIES } from "../lib/categories";
 
 /** Champ texte simple, pour ne pas répéter le même balisage. */
 function Field({ id, label, hint, children }) {
@@ -36,6 +37,64 @@ function Actions({ busy, isNew, onCancel, error }) {
 /* ------------------------------------------------------------------
    Article
    ------------------------------------------------------------------ */
+/**
+ * Champ catégorie : menu déroulant + saisie libre en dernier recours.
+ * ===================================================================
+ * Le déroulant évite les fautes de frappe, qui créeraient une
+ * catégorie parallèle invisible dans les filtres. L'option « Autre »
+ * garde la porte ouverte pour une catégorie inédite sans avoir à
+ * modifier le code — la colonne reste un simple texte en base.
+ * ===================================================================
+ */
+const OTHER = "__autre__";
+
+function CategorySelect({ id, value, onChange, options }) {
+  // Une valeur hors liste (article ancien, catégorie créée à la main)
+  // bascule d'office en saisie libre, sinon elle serait écrasée au
+  // premier enregistrement.
+  const [free, setFree] = useState(Boolean(value) && !options.includes(value));
+
+  const handleSelect = (e) => {
+    if (e.target.value === OTHER) {
+      setFree(true);
+      onChange("");
+    } else {
+      setFree(false);
+      onChange(e.target.value);
+    }
+  };
+
+  return (
+    <>
+      <select
+        id={id}
+        value={free ? OTHER : value}
+        onChange={handleSelect}
+        required
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value={OTHER}>Autre…</option>
+      </select>
+
+      {free && (
+        <input
+          type="text"
+          className="form__sub-input"
+          placeholder="Nom de la nouvelle catégorie"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required
+          autoFocus
+        />
+      )}
+    </>
+  );
+}
+
 export function ArticleForm({ initial, onSave, onCancel }) {
   const isNew = !initial;
   const [form, setForm] = useState({
@@ -95,7 +154,12 @@ export function ArticleForm({ initial, onSave, onCancel }) {
 
         <div className="form__row">
           <Field id="a-category" label="Catégorie *">
-            <input id="a-category" type="text" value={form.category} onChange={set("category")} required />
+            <CategorySelect
+              id="a-category"
+              value={form.category}
+              onChange={(category) => setForm((c) => ({ ...c, category }))}
+              options={ARTICLE_CATEGORIES}
+            />
           </Field>
 
           <Field id="a-reading" label="Temps de lecture (min) *">
@@ -244,8 +308,15 @@ export function EventForm({ initial, onSave, onCancel }) {
             <input id="e-date" type="datetime-local" value={form.date} onChange={set("date")} required />
           </Field>
 
+          {/* Même traitement que pour les articles : le champ libre
+              laissait passer les fautes de frappe. */}
           <Field id="e-category" label="Catégorie *">
-            <input id="e-category" type="text" value={form.category} onChange={set("category")} required />
+            <CategorySelect
+              id="e-category"
+              value={form.category}
+              onChange={(category) => setForm((c) => ({ ...c, category }))}
+              options={EVENT_CATEGORIES}
+            />
           </Field>
         </div>
 

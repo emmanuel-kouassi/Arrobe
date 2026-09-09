@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import RichText from "../components/RichText";
+import AdminBackBar from "../components/AdminBackBar";
 import RegistrationForm from "../components/RegistrationForm";
 import { api } from "../lib/api";
 import { formatDateTime } from "../lib/format";
@@ -94,6 +95,7 @@ export default function EventDetail({ slug }) {
   if (state === "loading") {
     return (
       <main className="detail">
+      <AdminBackBar to="#/administration/evenements" label="Retour aux événements" />
         <div className="container">
           <p className="empty">Chargement de l'événement…</p>
         </div>
@@ -104,6 +106,7 @@ export default function EventDetail({ slug }) {
   if (state !== "ready") {
     return (
       <main className="detail">
+      <AdminBackBar to="#/administration/evenements" label="Retour aux événements" />
         <div className="container">
           <p className="empty">
             <span className="empty__title">
@@ -130,6 +133,7 @@ export default function EventDetail({ slug }) {
 
   return (
     <main className="detail">
+      <AdminBackBar to="#/administration/evenements" label="Retour aux événements" />
       <header className="detail__hero">
         <div className="container">
           <a className="back" href="#/evenement">

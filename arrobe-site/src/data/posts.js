@@ -13,11 +13,9 @@
  * ===================================================================
  */
 
-export const CATEGORIES = [
-  { id: "all", label: "Tous" },
-  { id: "tuto", label: "Tuto" },
-  { id: "projets", label: "Projets & Initiatives" },
-];
+/* CATEGORIES a déménagé dans src/lib/categories.js : la liste est
+   désormais partagée avec le formulaire d'administration, pour que
+   les deux ne puissent plus diverger. */
 
 export const POSTS = [];
 

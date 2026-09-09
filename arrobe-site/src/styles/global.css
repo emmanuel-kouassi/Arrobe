@@ -1193,6 +1193,11 @@ input:focus-visible {
 
 .post-grid--list {
   grid-template-columns: 1fr;
+  /* Toutes les lignes prennent la hauteur de la plus haute. C'est ce
+     qui garantit des blocs strictement identiques sans avoir à fixer
+     une hauteur en pixels, qui casserait dès qu'un titre passe sur
+     deux lignes ou que la police change. */
+  grid-auto-rows: 1fr;
 }
 
 .post {
@@ -1301,23 +1306,57 @@ input:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
   align-items: stretch;
-}
-.post--list .post__media {
-  height: 100%;
+  /* Plancher : sans lui, une liste d'articles très courts donnerait
+     des bandeaux écrasés. */
   min-height: 210px;
 }
+
+/* La miniature occupe toute la hauteur de la ligne, quelle que soit
+   la taille ou le ratio du fichier d'origine. L'image est recadrée
+   par object-fit: cover, défini plus haut sur .post__media img. */
+.post--list .post__media {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .post--list .post__body {
   padding: 28px 32px;
-  justify-content: center;
+  justify-content: flex-start;
+  /* Indispensable : sans min-height: 0, un enfant de grille refuse de
+     descendre sous la taille de son contenu, et le rognage du texte
+     ci-dessous n'aurait aucun effet. */
+  min-height: 0;
+  overflow: hidden;
 }
+
+/* --- Rognage du texte -----------------------------------------------
+   Deux articles n'ont jamais des résumés de même longueur. Sans
+   limite, le plus bavard imposerait sa hauteur à toute la liste.
+   On coupe proprement avec des points de suspension. */
 .post--list .post__title {
   font-size: 1.5rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
+
 .post--list .post__excerpt {
   max-width: 78ch;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
+
 .post--list .post__footer {
   padding-top: 22px;
+  /* Colle le pied de carte en bas, quelle que soit la hauteur du
+     texte au-dessus. Les boutons de toutes les lignes s'alignent. */
+  margin-top: auto;
 }
 
 /* ==================================================================
@@ -1949,8 +1988,76 @@ input:focus-visible {
 /* ==================================================================
    15. Pages de détail (article & événement)
    ================================================================== */
+/* --- Bandeau de retour vers l'administration -----------------------
+   Visible seulement quand un jeton de session existe. Se glisse sous
+   la barre de navigation fixe, d'où le margin-top. */
+.admin-bar {
+  position: relative;
+  z-index: 5;
+  margin-top: var(--nav-h);
+  padding: 10px 0;
+  background: #101a34;
+  color: #dfe6f7;
+}
+/* Le bandeau prend la place du décalage : la page ne doit pas le
+   compter deux fois. */
+.admin-bar + .detail__hero,
+.admin-bar ~ .container {
+  margin-top: 0;
+}
+
+.admin-bar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+
+.admin-bar__tag {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.admin-bar__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 18px 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.admin-bar__link svg {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.25s var(--ease);
+}
+.admin-bar__link:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--white);
+  color: var(--white);
+}
+.admin-bar__link:hover svg {
+  transform: translateX(-4px);
+}
+
 .detail {
   padding-bottom: clamp(48px, 7vw, 90px);
+}
+
+/* Écrans sans bandeau de titre — « Chargement… », « introuvable » — :
+   sans ce décalage, le texte se glisse sous la navigation fixe.
+   Quand le bandeau d'administration ou le hero est présent, c'est lui
+   qui porte le décalage et cette règle ne s'applique pas. */
+.detail > .container:first-child {
+  margin-top: calc(var(--nav-h) + 28px);
 }
 
 .detail__hero {
@@ -2635,6 +2742,12 @@ input:focus-visible {
   min-width: 180px;
 }
 
+/* Champ de saisie qui apparaît sous le déroulant quand on choisit
+   « Autre… » comme catégorie. */
+.form__sub-input {
+  margin-top: 8px;
+}
+
 /* --- Éditeur riche ---------------------------------------------------- */
 .ed {
   border: 1px solid #cfd6e6;
@@ -2954,8 +3067,22 @@ input:focus-visible {
     flex-wrap: wrap;
     gap: 12px;
   }
+  /* Empilé sur mobile, l'égalisation n'a plus de sens : elle
+     imposerait à toutes les cartes la hauteur de la plus longue, avec
+     de grands vides au milieu. */
+  .post-grid--list {
+    grid-auto-rows: auto;
+  }
   .post--list {
     grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .post--list .post__body {
+    overflow: visible;
+  }
+  .post--list .post__excerpt {
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
   }
   .post--list .post__media {
     aspect-ratio: 16 / 10;
@@ -3088,6 +3215,17 @@ input:focus-visible {
   }
 
   /* --- Pages de détail --------------------------------------------- */
+  .admin-bar__inner {
+    justify-content: center;
+  }
+  .admin-bar__tag {
+    display: none;
+  }
+  .admin-bar__link {
+    width: 100%;
+    justify-content: center;
+  }
+
   .detail__meta {
     flex-direction: column;
     align-items: flex-start;

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import useReveal from "../hooks/useReveal";
 import PostCard from "../components/PostCard";
 import { api } from "../lib/api";
-import { CATEGORIES, SORT_OPTIONS, sortPosts } from "../data/posts";
+import { SORT_OPTIONS, sortPosts } from "../data/posts";
+import { ALL, buildFilters } from "../lib/categories";
 
 function FilterIcon() {
   return (
@@ -41,7 +42,7 @@ function ListIcon() {
 
 export default function Blog() {
   const [sort, setSort] = useState("recent");
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState(ALL);
   const [view, setView] = useState("grid");
 
   const [posts, setPosts] = useState([]);
@@ -78,11 +79,15 @@ export default function Blog() {
   // aller-retour serveur à chaque clic n'apporterait rien.
   const visiblePosts = useMemo(() => {
     const filtered =
-      category === "all"
+      category === ALL
         ? posts
         : posts.filter((post) => post.category === category);
     return sortPosts(filtered, sort);
   }, [posts, category, sort]);
+
+  // Les puces sont construites à partir des articles reçus : une
+  // catégorie ajoutée plus tard apparaît sans toucher au code.
+  const filters = useMemo(() => buildFilters(posts), [posts]);
 
   return (
     <main className="blog">
@@ -146,7 +151,7 @@ export default function Blog() {
           </div>
 
           <div className="blog__chips">
-            {CATEGORIES.map((cat) => (
+            {filters.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
