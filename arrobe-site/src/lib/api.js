@@ -205,4 +205,62 @@ export const api = {
       auth: true,
     });
   },
+
+  /* --- Administration --------------------------------------------- */
+
+  async stats() {
+    return request("/api/admin/stats", { auth: true });
+  },
+
+  /** Listes brutes pour l'admin : on garde les champs de la base. */
+  async adminArticles() {
+    const data = await request("/api/articles", { auth: true });
+    return data.articles;
+  },
+
+  async adminEvents() {
+    return request("/api/events", { auth: true });
+  },
+
+  async createArticle(body) {
+    const data = await request("/api/articles", { method: "POST", body, auth: true });
+    return data.article;
+  },
+
+  async updateArticle(slug, body) {
+    const data = await request(`/api/articles/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      body,
+      auth: true,
+    });
+    return data.article;
+  },
+
+  async deleteArticle(slug) {
+    return request(`/api/articles/${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+      auth: true,
+    });
+  },
+
+  async createEvent(body) {
+    const data = await request("/api/events", { method: "POST", body, auth: true });
+    return data.event;
+  },
+
+  async updateEvent(slug, body) {
+    const data = await request(`/api/events/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      body,
+      auth: true,
+    });
+    return data.event;
+  },
+
+  async deleteEvent(slug, { force = false } = {}) {
+    return request(
+      `/api/events/${encodeURIComponent(slug)}${force ? "?force=1" : ""}`,
+      { method: "DELETE", auth: true }
+    );
+  },
 };

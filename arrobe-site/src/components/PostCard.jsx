@@ -1,4 +1,5 @@
 import useReveal from "../hooks/useReveal";
+import { formatLongDate } from "../lib/format";
 
 /**
  * Anciennement un compteur de vues. La base ne stocke pas les vues :
@@ -47,6 +48,12 @@ export default function PostCard({ post, view = "grid", index = 0 }) {
         {post.status === "DRAFT" && <span className="post__draft">Brouillon</span>}
         <h3 className="post__title">{post.title}</h3>
         <p className="post__excerpt">{post.excerpt}</p>
+
+        {/* Un brouillon n'a pas de date de publication : on n'affiche
+            la ligne que si elle existe. */}
+        {post.publishedAt && (
+          <p className="post__date">Publié le {formatLongDate(post.publishedAt)}</p>
+        )}
 
         <div className="post__footer">
           <span className="post__views">

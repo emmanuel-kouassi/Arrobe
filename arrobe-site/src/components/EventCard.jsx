@@ -5,10 +5,13 @@ import useReveal from "../hooks/useReveal";
  *
  * props :
  *   event   -> objet venant de src/data/events.js
- *   cta     -> texte du bouton ("S'inscrire" ou "Voir")
+ *   cta     -> texte du bouton. Toujours « Voir » : une carte annonce
+ *              un événement, elle n'inscrit jamais directement. On
+ *              s'inscrit depuis la page de détail, après avoir lu le
+ *              programme.
  *   index   -> position dans la liste, sert au décalage de l'animation
  */
-export default function EventCard({ event, cta = "S'inscrire", index = 0 }) {
+export default function EventCard({ event, cta = "Voir", index = 0 }) {
   const [ref, shown] = useReveal({ threshold: 0.15 });
 
   return (

@@ -21,6 +21,7 @@ import "dotenv/config";
 import { createServer } from "node:http";
 
 import login from "../api/admin/login.js";
+import stats from "../api/admin/stats.js";
 import articles from "../api/articles/index.js";
 import article from "../api/articles/[slug].js";
 import events from "../api/events/index.js";
@@ -40,6 +41,7 @@ const PORT = Number(process.env.API_PORT ?? 3001);
  */
 const ROUTES = [
   { pattern: ["api", "admin", "login"], handler: login },
+  { pattern: ["api", "admin", "stats"], handler: stats },
   { pattern: ["api", "articles"], handler: articles },
   { pattern: ["api", "articles", ":slug"], handler: article },
   { pattern: ["api", "events"], handler: events },

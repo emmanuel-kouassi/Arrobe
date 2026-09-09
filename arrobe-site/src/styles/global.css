@@ -1940,7 +1940,298 @@ input:focus-visible {
 }
 
 /* ==================================================================
-   15. RESPONSIVE — système unique
+   15. Pages de détail (article & événement)
+   ================================================================== */
+.detail {
+  padding-bottom: clamp(48px, 7vw, 90px);
+}
+
+.detail__hero {
+  position: relative;
+  margin-top: var(--nav-h);
+  padding: clamp(28px, 4vw, 48px) 0 clamp(32px, 5vw, 56px);
+  color: var(--white);
+  background: var(--navy);
+  overflow: hidden;
+}
+.detail__hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    115% 150% at 80% 18%,
+    rgba(20, 162, 106, 0.8) 0%,
+    rgba(20, 162, 106, 0) 58%
+  );
+  animation: blogGlow 16s ease-in-out infinite alternate;
+}
+.detail__hero .container {
+  position: relative;
+  z-index: 1;
+}
+/* Le bouton retour est clair sur le bandeau foncé */
+.detail__hero .back {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--white);
+}
+.detail__hero .back:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: var(--white);
+  color: var(--white);
+}
+
+.detail__eyebrow {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.detail__title {
+  font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.5px;
+  margin: 0 0 20px;
+}
+
+.detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 26px;
+  margin: 0 0 26px;
+  font-size: 0.95rem;
+  opacity: 0.92;
+}
+.detail__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail__icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+
+.detail__closed {
+  display: inline-block;
+  margin: 0;
+  padding: 11px 22px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* --- Corps de la page --------------------------------------------- */
+.detail__media {
+  margin: clamp(-32px, -3vw, -20px) 0 clamp(28px, 4vw, 44px);
+  position: relative;
+  z-index: 2;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 26px 58px rgba(22, 38, 77, 0.24);
+}
+.detail__media img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.detail__excerpt {
+  max-width: 68ch;
+  margin: 0 0 30px;
+  font-size: 1.12rem;
+  font-weight: 500;
+  line-height: 1.7;
+  color: #2c3a5c;
+}
+
+.detail__section-title {
+  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+  font-weight: 600;
+  margin: clamp(32px, 4vw, 48px) 0 18px;
+}
+
+.detail__notice {
+  max-width: 68ch;
+  margin: 0 0 26px;
+  padding: 14px 18px;
+  border-left: 3px solid var(--green);
+  border-radius: 0 10px 10px 0;
+  background: rgba(20, 162, 106, 0.09);
+  font-size: 0.96rem;
+}
+
+.detail__back-empty {
+  margin-top: 26px;
+  text-align: center;
+}
+
+/* --- Contenu riche venant de l'éditeur ----------------------------
+   Le HTML est nettoyé par le composant RichText avant injection.
+   Ces règles habillent ce qui en sort. */
+.prose {
+  max-width: 68ch;
+  font-size: 1.02rem;
+  line-height: 1.8;
+  color: #2c3a5c;
+}
+.prose > * + * {
+  margin-top: 1.1em;
+}
+.prose h2,
+.prose h3,
+.prose h4 {
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.8em;
+}
+.prose h2 {
+  font-size: 1.5rem;
+}
+.prose h3 {
+  font-size: 1.25rem;
+}
+.prose h4 {
+  font-size: 1.08rem;
+}
+.prose a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose a:hover {
+  color: var(--green-dark);
+}
+.prose ul,
+.prose ol {
+  padding-left: 1.4em;
+}
+.prose li + li {
+  margin-top: 0.4em;
+}
+.prose blockquote {
+  margin-left: 0;
+  margin-right: 0;
+  padding: 6px 0 6px 20px;
+  border-left: 3px solid var(--green);
+  font-style: italic;
+  color: #3a4664;
+}
+.prose img {
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(22, 38, 77, 0.14);
+}
+.prose figcaption {
+  margin-top: 8px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.prose code {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #eef1f7;
+  font-size: 0.92em;
+}
+.prose pre {
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: var(--navy);
+  color: #e8ecf6;
+  overflow-x: auto;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.prose hr {
+  border: 0;
+  border-top: 1px solid #dfe4ef;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.prose th,
+.prose td {
+  padding: 10px 14px;
+  border: 1px solid #dfe4ef;
+  text-align: left;
+}
+.prose th {
+  background: #eef1f7;
+  font-weight: 600;
+}
+
+/* --- Formulaire d'inscription -------------------------------------- */
+.register {
+  padding: clamp(40px, 6vw, 72px) var(--gutter) 0;
+}
+
+.register__card {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(30px, 4vw, 52px);
+  border-radius: 22px;
+  background: var(--navy);
+  color: #eaf0ff;
+  box-shadow: 0 26px 60px rgba(22, 38, 77, 0.26);
+  scroll-margin-top: calc(var(--nav-h) + 20px);
+}
+
+.register__card h2 {
+  position: relative;
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: clamp(1.4rem, 2.4vw, 1.8rem);
+  font-weight: 600;
+}
+.register__card h2::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 7px;
+  width: 7px;
+  background: var(--green);
+}
+
+.register__lead {
+  margin: 0 0 28px;
+  font-size: 0.96rem;
+  opacity: 0.85;
+}
+
+.register__note {
+  margin: 16px 0 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.register__card--done {
+  border: 2px solid var(--green);
+  animation: fadeUp 0.5s var(--ease) both;
+}
+
+/* --- Date de publication sur les cartes d'article ------------------- */
+.post__date {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+/* ==================================================================
+   16. RESPONSIVE — système unique
    ------------------------------------------------------------------
    Deux points de rupture, et deux seulement :
 
@@ -2216,6 +2507,36 @@ input:focus-visible {
     border-radius: 18px;
   }
 
+  /* --- Pages de détail --------------------------------------------- */
+  .detail__meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .detail__hero .btn {
+    width: 100%;
+  }
+  .detail__media img {
+    aspect-ratio: 4 / 3;
+  }
+  .detail__excerpt {
+    font-size: 1.02rem;
+  }
+  .register {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .register__card {
+    padding: 26px 20px 30px;
+    border-radius: 18px;
+  }
+  .prose {
+    font-size: 1rem;
+  }
+  .prose pre {
+    padding: 14px 16px;
+  }
+
   /* --- Pied de page ---------------------------------------------------- */
   .footer__bottom {
     font-size: 0.88rem;
@@ -2223,7 +2544,7 @@ input:focus-visible {
 }
 
 /* ==================================================================
-   16. Accessibilité : mouvement réduit
+   17. Accessibilité : mouvement réduit
    ================================================================== */
 @media (prefers-reduced-motion: reduce) {
   html {

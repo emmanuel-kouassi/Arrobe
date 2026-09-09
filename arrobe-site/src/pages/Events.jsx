@@ -143,9 +143,9 @@ export default function Events() {
           <EventSection
             state={state}
             events={upcoming}
-            cta="S'inscrire"
+            cta="Voir"
             error={error}
-            emptyText="Aucune date n'est encore programmée. Revenez bientôt&nbsp;: les prochains ateliers seront annoncés ici."
+            emptyText="Aucun événement à venir pour le moment. Revenez bientôt, les prochains ateliers seront annoncés ici."
           />
         </div>
       </section>

@@ -105,6 +105,14 @@ model Event {
   date        DateTime
   location    String
   organizer   String
+
+  // Compte rendu rédigé APRÈS l'événement : photos, retour sur la
+  // journée. Reste null tant que rien n'est écrit — l'affichage
+  // retombe alors sur `content`. Nullable et non obligatoire : un
+  // événement passé sans compte rendu est un cas normal, pas une
+  // erreur de saisie.
+  recap       String?  @db.Text
+
   status      Status   @default(DRAFT)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

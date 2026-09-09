@@ -173,6 +173,13 @@ export function validateEvent(body, { partial = false } = {}) {
     if (image !== undefined) value.image = image;
   }
 
+  // Compte rendu d'après-événement. Facultatif : on accepte de le
+  // vider en envoyant null ou une chaîne vide.
+  if (has("recap")) {
+    const recap = optionalText(errors, body, "recap", { max: 200_000 });
+    if (recap !== undefined) value.recap = recap;
+  }
+
   if (has("slug")) {
     const slug = slugify(body.slug ?? "");
     if (!slug) errors.push("slug est vide après nettoyage.");

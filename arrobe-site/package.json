@@ -14,13 +14,14 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
-    "dev:api": "node server/index.js",
-    "start": "node server/index.js"
+    "dev:api": "node --import tsx server/index.js",
+    "start": "node --import tsx server/index.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "bcryptjs": "^3.0.3",
+    "dompurify": "^3.4.15",
     "jose": "^6.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
