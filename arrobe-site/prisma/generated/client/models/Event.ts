@@ -35,6 +35,7 @@ export type EventMinAggregateOutputType = {
   date: Date | null
   location: string | null
   organizer: string | null
+  recap: string | null
   status: $Enums.Status | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -51,6 +52,7 @@ export type EventMaxAggregateOutputType = {
   date: Date | null
   location: string | null
   organizer: string | null
+  recap: string | null
   status: $Enums.Status | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -67,6 +69,7 @@ export type EventCountAggregateOutputType = {
   date: number
   location: number
   organizer: number
+  recap: number
   status: number
   createdAt: number
   updatedAt: number
@@ -85,6 +88,7 @@ export type EventMinAggregateInputType = {
   date?: true
   location?: true
   organizer?: true
+  recap?: true
   status?: true
   createdAt?: true
   updatedAt?: true
@@ -101,6 +105,7 @@ export type EventMaxAggregateInputType = {
   date?: true
   location?: true
   organizer?: true
+  recap?: true
   status?: true
   createdAt?: true
   updatedAt?: true
@@ -117,6 +122,7 @@ export type EventCountAggregateInputType = {
   date?: true
   location?: true
   organizer?: true
+  recap?: true
   status?: true
   createdAt?: true
   updatedAt?: true
@@ -206,6 +212,7 @@ export type EventGroupByOutputType = {
   date: Date
   location: string
   organizer: string
+  recap: string | null
   status: $Enums.Status
   createdAt: Date
   updatedAt: Date
@@ -243,6 +250,7 @@ export type EventWhereInput = {
   date?: Prisma.DateTimeFilter<"Event"> | Date | string
   location?: Prisma.StringFilter<"Event"> | string
   organizer?: Prisma.StringFilter<"Event"> | string
+  recap?: Prisma.StringNullableFilter<"Event"> | string | null
   status?: Prisma.EnumStatusFilter<"Event"> | $Enums.Status
   createdAt?: Prisma.DateTimeFilter<"Event"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Event"> | Date | string
@@ -260,6 +268,7 @@ export type EventOrderByWithRelationInput = {
   date?: Prisma.SortOrder
   location?: Prisma.SortOrder
   organizer?: Prisma.SortOrder
+  recap?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -280,6 +289,7 @@ export type EventWhereUniqueInput = Prisma.AtLeast<{
   date?: Prisma.DateTimeFilter<"Event"> | Date | string
   location?: Prisma.StringFilter<"Event"> | string
   organizer?: Prisma.StringFilter<"Event"> | string
+  recap?: Prisma.StringNullableFilter<"Event"> | string | null
   status?: Prisma.EnumStatusFilter<"Event"> | $Enums.Status
   createdAt?: Prisma.DateTimeFilter<"Event"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Event"> | Date | string
@@ -297,6 +307,7 @@ export type EventOrderByWithAggregationInput = {
   date?: Prisma.SortOrder
   location?: Prisma.SortOrder
   organizer?: Prisma.SortOrder
+  recap?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -319,6 +330,7 @@ export type EventScalarWhereWithAggregatesInput = {
   date?: Prisma.DateTimeWithAggregatesFilter<"Event"> | Date | string
   location?: Prisma.StringWithAggregatesFilter<"Event"> | string
   organizer?: Prisma.StringWithAggregatesFilter<"Event"> | string
+  recap?: Prisma.StringNullableWithAggregatesFilter<"Event"> | string | null
   status?: Prisma.EnumStatusWithAggregatesFilter<"Event"> | $Enums.Status
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Event"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Event"> | Date | string
@@ -335,6 +347,7 @@ export type EventCreateInput = {
   date: Date | string
   location: string
   organizer: string
+  recap?: string | null
   status?: $Enums.Status
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -352,6 +365,7 @@ export type EventUncheckedCreateInput = {
   date: Date | string
   location: string
   organizer: string
+  recap?: string | null
   status?: $Enums.Status
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -369,6 +383,7 @@ export type EventUpdateInput = {
   date?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.StringFieldUpdateOperationsInput | string
   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+  recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -386,6 +401,7 @@ export type EventUncheckedUpdateInput = {
   date?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.StringFieldUpdateOperationsInput | string
   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+  recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -403,6 +419,7 @@ export type EventCreateManyInput = {
   date: Date | string
   location: string
   organizer: string
+  recap?: string | null
   status?: $Enums.Status
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -419,6 +436,7 @@ export type EventUpdateManyMutationInput = {
   date?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.StringFieldUpdateOperationsInput | string
   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+  recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -435,6 +453,7 @@ export type EventUncheckedUpdateManyInput = {
   date?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.StringFieldUpdateOperationsInput | string
   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+  recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -451,6 +470,7 @@ export type EventCountOrderByAggregateInput = {
   date?: Prisma.SortOrder
   location?: Prisma.SortOrder
   organizer?: Prisma.SortOrder
+  recap?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -467,6 +487,7 @@ export type EventMaxOrderByAggregateInput = {
   date?: Prisma.SortOrder
   location?: Prisma.SortOrder
   organizer?: Prisma.SortOrder
+  recap?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -483,6 +504,7 @@ export type EventMinOrderByAggregateInput = {
   date?: Prisma.SortOrder
   location?: Prisma.SortOrder
   organizer?: Prisma.SortOrder
+  recap?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -518,6 +540,7 @@ export type EventCreateWithoutRegistrationsInput = {
   date: Date | string
   location: string
   organizer: string
+  recap?: string | null
   status?: $Enums.Status
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -534,6 +557,7 @@ export type EventUncheckedCreateWithoutRegistrationsInput = {
   date: Date | string
   location: string
   organizer: string
+  recap?: string | null
   status?: $Enums.Status
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -566,6 +590,7 @@ export type EventUpdateWithoutRegistrationsInput = {
   date?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.StringFieldUpdateOperationsInput | string
   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+  recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -582,6 +607,7 @@ export type EventUncheckedUpdateWithoutRegistrationsInput = {
   date?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.StringFieldUpdateOperationsInput | string
   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+  recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -629,6 +655,7 @@ export type EventSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   date?: boolean
   location?: boolean
   organizer?: boolean
+  recap?: boolean
   status?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -647,6 +674,7 @@ export type EventSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   date?: boolean
   location?: boolean
   organizer?: boolean
+  recap?: boolean
   status?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -663,6 +691,7 @@ export type EventSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   date?: boolean
   location?: boolean
   organizer?: boolean
+  recap?: boolean
   status?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -679,12 +708,13 @@ export type EventSelectScalar = {
   date?: boolean
   location?: boolean
   organizer?: boolean
+  recap?: boolean
   status?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type EventOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "slug" | "title" | "description" | "content" | "image" | "category" | "date" | "location" | "organizer" | "status" | "createdAt" | "updatedAt", ExtArgs["result"]["event"]>
+export type EventOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "slug" | "title" | "description" | "content" | "image" | "category" | "date" | "location" | "organizer" | "recap" | "status" | "createdAt" | "updatedAt", ExtArgs["result"]["event"]>
 export type EventInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   registrations?: boolean | Prisma.Event$registrationsArgs<ExtArgs>
   _count?: boolean | Prisma.EventCountOutputTypeDefaultArgs<ExtArgs>
@@ -708,6 +738,7 @@ export type $EventPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
     date: Date
     location: string
     organizer: string
+    recap: string | null
     status: $Enums.Status
     createdAt: Date
     updatedAt: Date
@@ -1145,6 +1176,7 @@ export interface EventFieldRefs {
   readonly date: Prisma.FieldRef<"Event", 'DateTime'>
   readonly location: Prisma.FieldRef<"Event", 'String'>
   readonly organizer: Prisma.FieldRef<"Event", 'String'>
+  readonly recap: Prisma.FieldRef<"Event", 'String'>
   readonly status: Prisma.FieldRef<"Event", 'Status'>
   readonly createdAt: Prisma.FieldRef<"Event", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"Event", 'DateTime'>

@@ -35,17 +35,23 @@ async function listEvents(req, res) {
 
   const base = admin ? {} : { status: "PUBLISHED" };
 
+  // L'admin a besoin du nombre d'inscrits dans ses listes ; le public
+  // n'a pas à connaître ce chiffre.
+  const select = admin
+    ? { ...LIST_FIELDS, _count: { select: { registrations: true } } }
+    : LIST_FIELDS;
+
   // Deux requêtes en parallèle plutôt qu'un tri en mémoire : la base
   // fait le travail via l'index (status, date).
   const [upcoming, past] = await Promise.all([
     prisma.event.findMany({
       where: { ...base, date: { gte: now } },
-      select: LIST_FIELDS,
+      select,
       orderBy: { date: "asc" }, // le plus proche en premier
     }),
     prisma.event.findMany({
       where: { ...base, date: { lt: now } },
-      select: LIST_FIELDS,
+      select,
       orderBy: { date: "desc" }, // le plus récent en premier
     }),
   ]);

@@ -2231,7 +2231,492 @@ input:focus-visible {
 }
 
 /* ==================================================================
-   16. RESPONSIVE — système unique
+   16. Administration
+   ------------------------------------------------------------------
+   Mise en page propre au back-office : barre latérale fixe à partir
+   de la tablette, tiroir escamotable en dessous.
+   ================================================================== */
+.adm {
+  --side: 244px;
+  min-height: 100svh;
+  background: var(--page);
+}
+
+.adm__side {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: var(--side);
+  display: flex;
+  flex-direction: column;
+  padding: 26px 16px;
+  background: var(--white);
+  border-right: 1px solid #e2e7f1;
+  z-index: 70;
+}
+
+.adm__brand {
+  margin: 0 0 26px;
+  padding: 0 12px;
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.adm__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adm__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #3a4664;
+  font: inherit;
+  font-size: 0.98rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+.adm__link:hover {
+  background: #f1f4fa;
+  color: var(--ink);
+}
+.adm__link.is-active {
+  background: #eef1f7;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.adm__icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.adm__side-foot {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.adm__who {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.adm__logout:hover {
+  background: rgba(255, 92, 92, 0.1);
+  color: #c33;
+}
+
+.adm__burger {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 80;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e7f1;
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(22, 38, 77, 0.12);
+}
+
+.adm__veil {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: rgba(22, 38, 77, 0.4);
+}
+
+.adm__main {
+  margin-left: var(--side);
+  padding: clamp(24px, 3vw, 44px) clamp(20px, 3vw, 44px) 80px;
+}
+
+/* --- En-tête de page ---------------------------------------------- */
+.adm__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 30px;
+}
+
+.adm__title {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.adm__subtitle {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.adm__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 20px;
+  border: 1px solid #cfd6e6;
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 0.96rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease), color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.btn-ghost:hover {
+  border-color: var(--green);
+  color: var(--green);
+  box-shadow: 0 8px 18px rgba(22, 38, 77, 0.1);
+}
+
+/* --- Chiffres clés -------------------------------------------------- */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 18px;
+  margin-bottom: 36px;
+}
+
+.kpi {
+  padding: 18px 20px;
+  border: 1px solid #e2e7f1;
+  border-radius: 14px;
+  background: var(--white);
+}
+
+.kpi__label {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.kpi__value {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+/* --- Panneaux et lignes --------------------------------------------- */
+.adm__panel {
+  margin-bottom: 34px;
+}
+
+.adm__panel-title {
+  margin: 0 0 12px;
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.adm__empty {
+  padding: 26px 22px;
+  border: 1.5px dashed #cfd6e6;
+  border-radius: 14px;
+  background: var(--white);
+  color: var(--muted);
+  text-align: center;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e2e7f1;
+  border-radius: 14px;
+  background: var(--white);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #eef1f7;
+}
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row--stack {
+  display: block;
+  padding: 0;
+}
+
+.row__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row__toggle:hover {
+  background: #f7f9fc;
+}
+
+.row__title {
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.row__side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.row__meta {
+  font-size: 0.88rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.row__act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #7c88a5;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+.row__act:hover {
+  background: #eef1f7;
+  color: var(--ink);
+}
+.row__act--danger:hover {
+  background: rgba(255, 92, 92, 0.12);
+  color: #c33;
+}
+
+.row__panel {
+  padding: 4px 18px 20px;
+  border-top: 1px solid #eef1f7;
+}
+
+.row__total {
+  margin: 12px 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.tag {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #eef1f7;
+  color: #3a4664;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tag--ok {
+  background: rgba(20, 162, 106, 0.14);
+  color: var(--green-dark);
+}
+
+/* --- Tableau des inscrits -------------------------------------------
+   Défilement horizontal plutôt que colonnes écrasées sur mobile. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.table th,
+.table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #eef1f7;
+  text-align: left;
+  white-space: nowrap;
+}
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.table a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --- Formulaires de l'admin ------------------------------------------ */
+.adm__form {
+  max-width: 860px;
+  padding: clamp(22px, 3vw, 34px);
+  border: 1px solid #e2e7f1;
+  border-radius: 16px;
+  background: var(--white);
+}
+
+.adm__form .form__field label {
+  color: var(--ink);
+}
+
+.adm__form input,
+.adm__form select,
+.adm__form textarea {
+  border: 1px solid #cfd6e6;
+  background: var(--white);
+}
+
+.form__hint {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.form__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+.form__actions .form__submit {
+  width: auto;
+  min-width: 180px;
+}
+
+/* --- Éditeur riche ---------------------------------------------------- */
+.ed {
+  border: 1px solid #cfd6e6;
+  border-radius: 12px;
+  background: var(--white);
+  overflow: hidden;
+}
+
+.ed--loading {
+  padding: 22px;
+  color: var(--muted);
+}
+
+.ed__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid #e2e7f1;
+  background: #f7f9fc;
+}
+
+.ed__btn {
+  min-width: 38px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #3a4664;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.ed__btn:hover:not(:disabled) {
+  background: #e8edf6;
+}
+.ed__btn.is-active {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--white);
+}
+.ed__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ed__sep {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: #d8dfec;
+}
+
+/* Conteneur positionné : sert d'ancrage au texte d'invite. */
+.ed__zone {
+  position: relative;
+  min-height: 240px;
+  max-height: 60svh;
+  overflow-y: auto;
+}
+
+.ed__area {
+  min-height: 240px;
+  padding: 18px 20px;
+}
+.ed__area:focus {
+  outline: none;
+}
+/* Le premier élément ne doit pas pousser le texte vers le bas */
+.ed__area > *:first-child {
+  margin-top: 0;
+}
+
+/* Invite affichée tant que rien n'est saisi. pointer-events: none pour
+   que le clic traverse et place le curseur dans la zone d'édition. */
+.ed__placeholder {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  margin: 0;
+  color: #9aa6bf;
+  pointer-events: none;
+}
+
+/* ==================================================================
+   17. RESPONSIVE — système unique
    ------------------------------------------------------------------
    Deux points de rupture, et deux seulement :
 
@@ -2345,6 +2830,27 @@ input:focus-visible {
   .newsletter__form input,
   .blog__sort select {
     font-size: 16px;
+  }
+
+  /* --- Administration : la barre latérale devient un tiroir ---------
+     Sous 1024px, la garder fixe mangerait un quart de l'écran. */
+  .adm__burger {
+    display: flex;
+  }
+  .adm__side {
+    transform: translateX(-100%);
+    transition: transform 0.3s var(--ease);
+    box-shadow: 0 0 40px rgba(22, 38, 77, 0.25);
+  }
+  .adm.is-open .adm__side {
+    transform: none;
+  }
+  .adm.is-open .adm__veil {
+    display: block;
+  }
+  .adm__main {
+    margin-left: 0;
+    padding-top: 74px; /* place pour le bouton du tiroir */
   }
 
   /* --- Pied de page : liens cliquables au doigt ---------------------- */
@@ -2507,6 +3013,73 @@ input:focus-visible {
     border-radius: 18px;
   }
 
+  /* --- Administration sur mobile -------------------------------------
+     Les lignes passent en deux étages : titre au-dessus, actions en
+     dessous. Sur 327px de large, tout tenir sur une ligne rendrait le
+     titre illisible et les boutons minuscules. */
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .row__toggle {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .row__side {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .adm__head {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .adm__actions .btn-ghost {
+    flex: 1 1 auto;
+  }
+  .kpi__value {
+    font-size: 1.6rem;
+  }
+  /* --- Éditeur : barre compacte et zone plus courte ---------------- */
+  .ed__bar {
+    gap: 2px;
+    padding: 6px;
+  }
+  .ed__btn {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 7px;
+  }
+  .ed__sep {
+    margin: 0 2px;
+  }
+  .ed__zone,
+  .ed__area {
+    min-height: 180px;
+  }
+  .ed__area {
+    padding: 14px 16px;
+  }
+  .ed__placeholder {
+    top: 14px;
+    left: 16px;
+    right: 16px;
+  }
+
+  .adm__form {
+    padding: 18px 16px 22px;
+  }
+  .form__actions .form__submit,
+  .form__actions .btn-ghost {
+    width: 100%;
+    min-width: 0;
+  }
+  .ed__content {
+    min-height: 200px;
+    padding: 14px 16px;
+  }
+
   /* --- Pages de détail --------------------------------------------- */
   .detail__meta {
     flex-direction: column;
@@ -2544,7 +3117,7 @@ input:focus-visible {
 }
 
 /* ==================================================================
-   17. Accessibilité : mouvement réduit
+   18. Accessibilité : mouvement réduit
    ================================================================== */
 @media (prefers-reduced-motion: reduce) {
   html {

@@ -33,6 +33,24 @@ export default function Admin({ route }) {
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
+  /**
+   * Changement de rubrique : on repasse en chargement DÈS LE RENDU.
+   *
+   * Sans ça, React rend le nouvel écran avant que l'effet ait rechargé
+   * les données : `payload` contient encore la forme de l'écran
+   * précédent, et un `payload.articles.map(...)` sur un `undefined`
+   * fait planter toute la page. L'ajustement pendant le rendu est le
+   * motif recommandé par React pour ce cas.
+   */
+  const key = `${section}/${target}`;
+  const [lastKey, setLastKey] = useState(key);
+  if (key !== lastKey) {
+    setLastKey(key);
+    setPayload(null);
+    setState("loading");
+    setError("");
+  }
+
   useEffect(() => {
     if (!isLoggedIn()) {
       window.location.hash = "#/connexion";
@@ -156,7 +174,7 @@ export default function Admin({ route }) {
     if (section === "articles" && target) {
       return (
         <ArticleForm
-          initial={payload.article}
+          initial={payload?.article}
           onSave={async (body) => {
             await api.updateArticle(payload.article.slug, body);
             goTo("#/administration/articles");
@@ -166,7 +184,12 @@ export default function Admin({ route }) {
       );
     }
 
+    // Second garde-fou : si la forme attendue n'est pas là, on affiche
+    // le chargement plutôt que de planter. Ne devrait jamais servir
+    // grâce à la remise à zéro ci-dessus, mais une page blanche coûte
+    // trop cher pour s'en remettre à un seul mécanisme.
     if (section === "articles") {
+      if (!payload?.articles) return <p className="adm__empty">Chargement…</p>;
       return <ArticleList articles={payload.articles} onDelete={deleteArticle} />;
     }
 
@@ -185,7 +208,7 @@ export default function Admin({ route }) {
     if (section === "evenements" && target) {
       return (
         <EventForm
-          initial={payload.event}
+          initial={payload?.event}
           onSave={async (body) => {
             await api.updateEvent(payload.event.slug, body);
             goTo("#/administration/evenements");
@@ -196,6 +219,7 @@ export default function Admin({ route }) {
     }
 
     if (section === "evenements") {
+      if (!payload?.events) return <p className="adm__empty">Chargement…</p>;
       return (
         <EventList
           upcoming={payload.events.upcoming}
@@ -206,6 +230,7 @@ export default function Admin({ route }) {
     }
 
     if (section === "inscriptions") {
+      if (!payload?.events) return <p className="adm__empty">Chargement…</p>;
       return (
         <RegistrationList
           events={payload.events}
@@ -214,6 +239,7 @@ export default function Admin({ route }) {
       );
     }
 
+    if (!payload?.stats) return <p className="adm__empty">Chargement…</p>;
     return (
       <Dashboard
         data={payload.stats}
