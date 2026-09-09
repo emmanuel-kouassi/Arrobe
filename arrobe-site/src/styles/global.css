@@ -2228,6 +2228,42 @@ input:focus-visible {
 .prose ol {
   padding-left: 1.4em;
 }
+
+/* --- Sorties propres à Quill 2 --------------------------------------
+   Quill rend TOUTES les listes en <ol>, le type réel étant porté par
+   l'attribut data-list. Sans ces règles, les puces s'afficheraient
+   numérotées sur le site public. */
+.prose ol li[data-list="bullet"] {
+  list-style-type: disc;
+}
+.prose ol li[data-list="ordered"] {
+  list-style-type: decimal;
+}
+
+/* Alignement et indentation : Quill les exprime en classes. */
+.prose .ql-align-center {
+  text-align: center;
+}
+.prose .ql-align-right {
+  text-align: right;
+}
+.prose .ql-align-justify {
+  text-align: justify;
+}
+.prose .ql-indent-1 {
+  margin-left: 2.5em;
+}
+.prose .ql-indent-2 {
+  margin-left: 5em;
+}
+.prose .ql-indent-3 {
+  margin-left: 7.5em;
+}
+/* Au-delà de 3 niveaux, on plafonne : sur mobile l'indentation
+   mangerait toute la largeur. */
+.prose [class*="ql-indent-"] {
+  max-width: 100%;
+}
 .prose li + li {
   margin-top: 0.4em;
 }
@@ -2748,7 +2784,54 @@ input:focus-visible {
   margin-top: 8px;
 }
 
-/* --- Éditeur riche ---------------------------------------------------- */
+/* --- Éditeur riche (Quill) --------------------------------------------
+   La feuille quill.snow.css est importée par le composant. On se
+   contente d'ajuster les bordures pour qu'elles s'accordent aux autres
+   champs du formulaire, et de rendre la barre utilisable au doigt. */
+.ed .ql-toolbar.ql-snow {
+  border: 1px solid #cfd6e6;
+  border-radius: 12px 12px 0 0;
+  background: #f7f9fc;
+  font-family: inherit;
+}
+.ed .ql-container.ql-snow {
+  border: 1px solid #cfd6e6;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: var(--white);
+  font-family: inherit;
+  font-size: 1rem;
+}
+.ed .ql-editor {
+  min-height: 240px;
+  max-height: 60svh;
+  padding: 18px 20px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.ed .ql-editor.ql-blank::before {
+  left: 20px;
+  right: 20px;
+  color: #9aa6bf;
+  font-style: normal;
+}
+/* Les boutons actifs reprennent le vert du site plutôt que le bleu
+   par défaut de Quill. */
+.ed .ql-snow .ql-toolbar button.ql-active .ql-stroke,
+.ed .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+.ed .ql-snow .ql-picker-label.ql-active .ql-stroke {
+  stroke: var(--green);
+}
+.ed .ql-snow .ql-toolbar button.ql-active .ql-fill,
+.ed .ql-snow.ql-toolbar button.ql-active .ql-fill {
+  fill: var(--green);
+}
+.ed .ql-snow.ql-toolbar button.ql-active,
+.ed .ql-snow .ql-picker-label.ql-active {
+  color: var(--green);
+}
+
+/* --- Éditeur riche : conteneur --------------------------------------- */
 .ed {
   border: 1px solid #cfd6e6;
   border-radius: 12px;
@@ -3175,6 +3258,37 @@ input:focus-visible {
   .kpi__value {
     font-size: 1.6rem;
   }
+  /* --- Barre d'outils Quill au doigt --------------------------------
+     Les boutons font 24px de haut par défaut, sous le seuil tactile.
+     On les agrandit et on laisse la barre passer à la ligne. */
+  .ed .ql-toolbar.ql-snow {
+    padding: 6px;
+  }
+  .ed .ql-snow.ql-toolbar button,
+  .ed .ql-snow .ql-toolbar button {
+    width: 38px;
+    height: 38px;
+    padding: 7px;
+  }
+  .ed .ql-snow .ql-picker {
+    height: 38px;
+  }
+  .ed .ql-snow .ql-picker-label {
+    display: flex;
+    align-items: center;
+  }
+  .ed .ql-toolbar.ql-snow .ql-formats {
+    margin-right: 8px;
+  }
+  .ed .ql-editor {
+    min-height: 200px;
+    padding: 14px 16px;
+  }
+  .ed .ql-editor.ql-blank::before {
+    left: 16px;
+    right: 16px;
+  }
+
   /* --- Éditeur : barre compacte et zone plus courte ---------------- */
   .ed__bar {
     gap: 2px;
