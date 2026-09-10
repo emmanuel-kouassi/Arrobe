@@ -1,23 +1,14 @@
-/**
- * Serveur d'API
- * ===================================================================
- * Les fichiers de `api/` sont écrits pour la signature (req, res) de
- * Node, celle qu'utilise Vercel. Ce serveur les monte sur un serveur
- * Node classique. Il sert deux usages :
- *
- *   - en développement, à côté de Vite (qui ne sait pas exécuter les
- *     fonctions de `api/`, il ne fait que servir des fichiers) ;
- *   - en production chez un hébergeur qui fait tourner un process Node
- *     permanent, comme o2switch avec son outil « Setup Node.js App ».
- *
- * Sur Vercel, ce fichier ne sert à rien : la plateforme monte `api/`
- * toute seule. Il ne gêne pas pour autant.
- *
- *   Démarrage :  npm run dev:api
- * ===================================================================
- */
+import dotenv from "dotenv";
 
-import "dotenv/config";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+// Chemins absolus : le serveur fonctionne quel que soit le dossier
+// depuis lequel on le lance.
+const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Ordre significatif : le premier fichier gagne sur le second.
+dotenv.config({ path: [join(racine, ".env.local"), join(racine, ".env")] });
 import { createServer } from "node:http";
 
 import login from "../api/admin/login.js";
@@ -28,6 +19,7 @@ import events from "../api/events/index.js";
 import event from "../api/events/[slug].js";
 import register from "../api/events/[slug]/register.js";
 import registrations from "../api/events/[slug]/registrations.js";
+import upload from "../api/upload.js";
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 
@@ -48,6 +40,7 @@ const ROUTES = [
   { pattern: ["api", "events", ":slug"], handler: event },
   { pattern: ["api", "events", ":slug", "register"], handler: register },
   { pattern: ["api", "events", ":slug", "registrations"], handler: registrations },
+    { pattern: ["api", "upload"], handler: upload },
 ];
 
 function match(segments) {
