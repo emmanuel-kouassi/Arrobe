@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
+
+import { uploadImage } from "../lib/uploadImage.js";
 
 /**
  * Éditeur riche — Quill 2 via react-quill-new
@@ -38,38 +40,54 @@ const FORMATS = [
 
 export default function Editor({ value, onChange, placeholder }) {
   const quillRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   /**
-   * Insertion d'image par URL, et non par téléversement.
+   * Téléversement direct depuis l'ordinateur.
    *
-   * Le bouton image de Quill ouvre par défaut un sélecteur de fichier
-   * et encode l'image en base64 DANS le HTML. Une photo de 2 Mo devient
-   * ~2,7 Mo de texte stocké dans la colonne `content` : la base gonfle,
-   * les requêtes ralentissent, et l'image n'est jamais mise en cache
-   * par le navigateur puisqu'elle fait partie de la page.
+   * On garde la main sur le sélecteur de fichier plutôt que de laisser
+   * faire Quill : son comportement par défaut encode l'image en base64
+   * DANS le HTML. Une photo de 2 Mo devient ~2,7 Mo de texte stocké
+   * dans la colonne `content` — la base gonfle, les requêtes ralentissent
+   * et l'image n'est jamais mise en cache par le navigateur.
    *
-   * En attendant une vraie route de téléversement, on demande une URL.
+   * Ici le fichier part vers Vercel Blob et seule son URL est insérée.
    */
-  const insertImage = useCallback(() => {
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFile = useCallback(async (event) => {
+    const file = event.target.files?.[0];
+    // Réinitialisé tout de suite : sans ça, resélectionner le même
+    // fichier après une erreur ne déclencherait aucun événement change.
+    event.target.value = "";
+    if (!file) return;
+
     const editor = quillRef.current?.getEditor();
     if (!editor) return;
 
-    const url = window.prompt(
-      "Adresse de l'image.\n\n" +
-        "Dépose le fichier dans public/images/ puis saisis son chemin, " +
-        "par exemple : /images/articles/atelier.jpg"
-    );
-    if (!url) return;
+    // Position mémorisée AVANT l'attente réseau : l'insertion doit se
+    // faire là où l'admin a cliqué, pas là où le curseur a pu dériver.
+    const range = editor.getSelection(true) ?? { index: editor.getLength() };
 
-    const clean = url.trim();
-    if (!/^(https?:\/\/|\/)/i.test(clean)) {
-      window.alert("Adresse refusée. Utilise https:// ou un chemin commençant par /");
-      return;
+    setUploading(true);
+    // Éditeur gelé pendant l'envoi : une frappe décalerait la position
+    // mémorisée et l'image atterrirait au mauvais endroit.
+    editor.enable(false);
+
+    try {
+      const url = await uploadImage(file);
+      editor.enable(true);
+      editor.insertEmbed(range.index, "image", url, "user");
+      editor.setSelection(range.index + 1, 0);
+    } catch (error) {
+      editor.enable(true);
+      window.alert(error.message);
+    } finally {
+      setUploading(false);
     }
-
-    const range = editor.getSelection(true);
-    editor.insertEmbed(range.index, "image", clean, "user");
-    editor.setSelection(range.index + 1, 0);
   }, []);
 
   /**
@@ -90,7 +108,7 @@ export default function Editor({ value, onChange, placeholder }) {
           ["link", "image"],
           ["clean"],
         ],
-        handlers: { image: insertImage },
+        handlers: { image: openFilePicker },
       },
       clipboard: {
         // Réduit la mise en forme parasite d'un collage depuis Word :
@@ -98,11 +116,20 @@ export default function Editor({ value, onChange, placeholder }) {
         matchVisual: false,
       },
     }),
-    [insertImage]
+    [openFilePicker]
   );
 
   return (
-    <div className="ed">
+    <div className="ed" aria-busy={uploading}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFile}
+        style={{ display: "none" }}
+        tabIndex={-1}
+      />
+
       <ReactQuill
         ref={quillRef}
         theme="snow"
@@ -112,6 +139,12 @@ export default function Editor({ value, onChange, placeholder }) {
         formats={FORMATS}
         placeholder={placeholder}
       />
+
+      {uploading && (
+        <p className="ed__status" role="status">
+          Envoi de l'image en cours…
+        </p>
+      )}
     </div>
   );
 }

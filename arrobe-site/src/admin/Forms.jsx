@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Editor from "./Editor";
 import { ARTICLE_CATEGORIES, EVENT_CATEGORIES } from "../lib/categories";
+import ImageField from "./ImageField";
+import { uploadImage } from "../lib/uploadImage.js";
 
 /** Champ texte simple, pour ne pas répéter le même balisage. */
 function Field({ id, label, hint, children }) {
@@ -95,7 +97,7 @@ function CategorySelect({ id, value, onChange, options }) {
   );
 }
 
-export function ArticleForm({ initial, onSave, onCancel }) {
+export function ArticleForm({ initial, onSave, onCancel, token }) {
   const isNew = !initial;
   const [form, setForm] = useState({
     title: initial?.title ?? "",
@@ -108,6 +110,8 @@ export function ArticleForm({ initial, onSave, onCancel }) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [imageFile, setImageFile] = useState(null);
+  const [uploadError, setUploadError] = useState("");
 
   const set = (field) => (e) =>
     setForm((c) => ({ ...c, [field]: e.target.value }));
@@ -119,10 +123,29 @@ export function ArticleForm({ initial, onSave, onCancel }) {
     setBusy(true);
     setError("");
     try {
+      let image = form.image.trim() || null;
+
+      // L'image part d'abord : on n'enregistre l'article qu'une fois
+      // son URL connue, jamais le fichier lui-même.
+      if (imageFile) {
+        setUploadError("");
+        try {
+          image = await uploadImage(imageFile, { token });
+        } catch (err) {
+          setUploadError(err.message);
+          setBusy(false);
+          return;
+        }
+        // Mémorisé : si l'enregistrement échoue et que l'admin réessaie,
+        // l'image ne repart pas une seconde fois dans le store.
+        setForm((c) => ({ ...c, image }));
+        setImageFile(null);
+      }
+
       await onSave({
         ...form,
         readingTime: Number(form.readingTime),
-        image: form.image.trim() || null,
+        image,
       });
     } catch (err) {
       setError(err.details?.join(" ") ?? err.message);
@@ -176,13 +199,14 @@ export function ArticleForm({ initial, onSave, onCancel }) {
         </div>
 
         <div className="form__row">
-          <Field
+          <ImageField
             id="a-image"
-            label="Image"
-            hint="Chemin public, par exemple /images/articles/tuto.jpg"
-          >
-            <input id="a-image" type="text" value={form.image} onChange={set("image")} />
-          </Field>
+            value={form.image}
+            file={imageFile}
+            onChange={setImageFile}
+            disabled={busy}
+            error={uploadError}
+          />
 
           <Field
             id="a-status"
@@ -202,6 +226,7 @@ export function ArticleForm({ initial, onSave, onCancel }) {
             value={form.content}
             onChange={(html) => setForm((c) => ({ ...c, content: html }))}
             placeholder="Contenu de l'article"
+            token={token}
           />
         </div>
 
@@ -224,7 +249,7 @@ function toLocalInput(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function EventForm({ initial, onSave, onCancel }) {
+export function EventForm({ initial, onSave, onCancel, token }) {
   const isNew = !initial;
   const [form, setForm] = useState({
     title: initial?.title ?? "",
@@ -240,6 +265,8 @@ export function EventForm({ initial, onSave, onCancel }) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [imageFile, setImageFile] = useState(null);
+  const [uploadError, setUploadError] = useState("");
 
   const set = (field) => (e) => setForm((c) => ({ ...c, [field]: e.target.value }));
 
@@ -262,13 +289,28 @@ export function EventForm({ initial, onSave, onCancel }) {
     setBusy(true);
     setError("");
     try {
+      let image = form.image.trim() || null;
+
+      if (imageFile) {
+        setUploadError("");
+        try {
+          image = await uploadImage(imageFile, { token });
+        } catch (err) {
+          setUploadError(err.message);
+          setBusy(false);
+          return;
+        }
+        setForm((c) => ({ ...c, image }));
+        setImageFile(null);
+      }
+
       await onSave({
         ...form,
         // datetime-local n'a pas de fuseau : on repasse par un Date
         // pour envoyer une ISO complète, sinon le serveur interprète
         // l'heure selon SON fuseau.
         date: new Date(form.date).toISOString(),
-        image: form.image.trim() || null,
+        image,
         recap: form.recap.trim() || null,
       });
     } catch (err) {
@@ -331,9 +373,14 @@ export function EventForm({ initial, onSave, onCancel }) {
         </div>
 
         <div className="form__row">
-          <Field id="e-image" label="Image" hint="Chemin public, ex. /images/evenements/atelier.jpg">
-            <input id="e-image" type="text" value={form.image} onChange={set("image")} />
-          </Field>
+          <ImageField
+            id="e-image"
+            value={form.image}
+            file={imageFile}
+            onChange={setImageFile}
+            disabled={busy}
+            error={uploadError}
+          />
 
           <Field id="e-status" label="Statut">
             <select id="e-status" value={form.status} onChange={set("status")}>
@@ -352,6 +399,7 @@ export function EventForm({ initial, onSave, onCancel }) {
             value={form.content}
             onChange={(html) => setForm((c) => ({ ...c, content: html }))}
             placeholder="Programme de l'événement"
+            token={token}
           />
         </div>
 
@@ -366,6 +414,7 @@ export function EventForm({ initial, onSave, onCancel }) {
               value={form.recap}
               onChange={(html) => setForm((c) => ({ ...c, recap: html }))}
               placeholder="Compte rendu de l'événement"
+              token={token}
             />
           </div>
         )}
