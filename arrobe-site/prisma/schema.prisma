@@ -1,0 +1,145 @@
+// ===================================================================
+// Schéma Prisma — Association @Rrobe
+// ===================================================================
+// Base PostgreSQL : le site est déployé sur Vercel, dont le système de
+// fichiers est éphémère. SQLite est donc exclu — la base serait remise
+// à zéro à chaque déploiement.
+//
+//   DATABASE_URL       connexion applicative (peut passer par un pooler)
+//   DIRECT_URL         connexion directe, utilisée par les migrations
+//
+// Si ton hébergeur ne fournit qu'une seule URL (pas de pooling),
+// mets la même valeur dans les deux variables.
+// ===================================================================
+
+generator client {
+  // `prisma-client` (et non l'ancien `prisma-client-js`) : c'est le
+  // générateur de Prisma 7, qui produit de l'ESM natif — indispensable
+  // ici puisque package.json déclare "type": "module".
+  provider = "prisma-client"
+
+  // Volontairement HORS de src/ : le client Prisma ne doit jamais
+  // partir dans le bundle navigateur. S'il vivait dans src/, un import
+  // maladroit depuis un composant React l'y ferait entrer sans bruit.
+  output   = "../prisma/generated/client"
+}
+
+datasource db {
+  // Depuis Prisma 7, `url` et `directUrl` ne sont plus acceptés ici.
+  // L'URL des migrations vit dans prisma.config.js, celle de
+  // l'application est passée à l'adaptateur dans le code.
+  provider = "postgresql"
+}
+
+// -------------------------------------------------------------------
+// État de publication, partagé par les articles et les événements.
+// -------------------------------------------------------------------
+enum Status {
+  DRAFT
+  PUBLISHED
+}
+
+// -------------------------------------------------------------------
+// Admin
+// -------------------------------------------------------------------
+// Un seul compte, créé par le script de seed. L'identifiant est choisi
+// à la main (pas un e-mail) : c'est un login de back-office, il n'a pas
+// vocation à recevoir du courrier ni à être communiqué.
+//
+// Aucun mot de passe en clair n'est stocké : uniquement le hash bcrypt.
+// -------------------------------------------------------------------
+model Admin {
+  id           String   @id @default(cuid())
+  identifiant  String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("admins")
+}
+
+// -------------------------------------------------------------------
+// Article de blog
+// -------------------------------------------------------------------
+model Article {
+  id           String    @id @default(cuid())
+  slug         String    @unique
+  title        String
+  excerpt      String
+  content      String    @db.Text // HTML long, pas de limite de 191 caractères
+  image        String?
+  category     String
+  readingTime  Int // en minutes
+  status       Status    @default(DRAFT)
+
+  // Renseignée uniquement au moment où l'article bascule en PUBLISHED.
+  // Reste null tant qu'il est en brouillon. Sert au tri et à l'affichage
+  // « Publié le … ». Ne jamais la confondre avec createdAt : un article
+  // peut être rédigé en janvier et publié en mars.
+  publishedAt  DateTime?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Le site public ne lit que les articles publiés, du plus récent au
+  // plus ancien : cet index couvre exactement cette requête.
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([category])
+  @@map("articles")
+}
+
+// -------------------------------------------------------------------
+// Événement
+// -------------------------------------------------------------------
+// Pas de champ « à venir / passé » en base : ce serait une donnée
+// périmée dès le lendemain. Le tri se calcule à la lecture en comparant
+// `date` à l'instant présent.
+// -------------------------------------------------------------------
+model Event {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String // résumé court, affiché dans les listes
+  content     String   @db.Text // HTML long, page de détail
+  image       String?
+  category    String
+  date        DateTime
+  location    String
+  organizer   String
+
+  // Compte rendu rédigé APRÈS l'événement : photos, retour sur la
+  // journée. Reste null tant que rien n'est écrit — l'affichage
+  // retombe alors sur `content`. Nullable et non obligatoire : un
+  // événement passé sans compte rendu est un cas normal, pas une
+  // erreur de saisie.
+  recap       String?  @db.Text
+
+  status      Status   @default(DRAFT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  registrations Registration[]
+
+  @@index([status, date])
+  @@index([date])
+  @@map("events")
+}
+
+// -------------------------------------------------------------------
+// Inscription à un événement
+// -------------------------------------------------------------------
+model Registration {
+  id             String   @id @default(cuid())
+  eventId        String
+  name           String
+  email          String
+  phone          String?
+  numberOfPeople Int      @default(1)
+  createdAt      DateTime @default(now())
+
+  // Supprimer un événement supprime ses inscriptions : sans cela, la
+  // suppression échouerait sur la contrainte de clé étrangère.
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("registrations")
+}

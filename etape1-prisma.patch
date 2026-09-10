@@ -1,0 +1,904 @@
+diff --git a/arrobe-site/.env.example b/arrobe-site/.env.example
+new file mode 100644
+index 0000000..52d2b67
+--- /dev/null
++++ b/arrobe-site/.env.example
+@@ -0,0 +1,25 @@
++# ===================================================================
++# Variables d'environnement — Association @Rrobe
++# -------------------------------------------------------------------
++# Copie ce fichier en `.env` et remplis les valeurs.
++# `.env` est ignoré par git : il ne doit JAMAIS être commité.
++# ===================================================================
++
++# --- Base de données PostgreSQL ------------------------------------
++# DATABASE_URL : utilisée par l'application (peut passer par un pooler)
++# DIRECT_URL   : connexion directe, utilisée par les migrations
++# Si ton hébergeur ne propose pas de pooling, mets la même valeur
++# dans les deux variables.
++DATABASE_URL="postgresql://utilisateur:motdepasse@hote:5432/arrobe?schema=public"
++DIRECT_URL="postgresql://utilisateur:motdepasse@hote:5432/arrobe?schema=public"
++
++# --- Compte administrateur unique ----------------------------------
++# Lus uniquement par le script de seed (npm run db:seed).
++# Le mot de passe est hashé avec bcrypt avant insertion : la base ne
++# contient jamais sa version en clair.
++#
++# ADMIN_USERNAME : identifiant de connexion choisi à la main.
++#                  Ce n'est pas une adresse e-mail.
++# ADMIN_PASSWORD : 12 caractères minimum (le seed refuse en dessous).
++ADMIN_USERNAME=""
++ADMIN_PASSWORD=""
+diff --git a/arrobe-site/.gitignore b/arrobe-site/.gitignore
+index a547bf3..836ea33 100644
+--- a/arrobe-site/.gitignore
++++ b/arrobe-site/.gitignore
+@@ -22,3 +22,13 @@ dist-ssr
+ *.njsproj
+ *.sln
+ *.sw?
++
++# Variables d'environnement — ne jamais commiter
++.env
++.env.*
++!.env.example
++
++# Prisma
++prisma/generated
++prisma/*.db
++prisma/*.db-journal
+diff --git a/arrobe-site/index.html b/arrobe-site/index.html
+index 9740b70..ad47730 100644
+--- a/arrobe-site/index.html
++++ b/arrobe-site/index.html
+@@ -1,10 +1,15 @@
+ <!doctype html>
+-<html lang="en">
++<html lang="fr">
+   <head>
+     <meta charset="UTF-8" />
+     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>arrobe-site</title>
++    <meta name="theme-color" content="#1c2b58" />
++    <meta
++      name="description"
++      content="Association @Rrobe à Saint-Germain-sur-Morin : ateliers, formations et accompagnement au numérique pour les particuliers et les entreprises."
++    />
++    <title>Association @Rrobe — Saint-Germain-sur-Morin</title>
+   </head>
+   <body>
+     <div id="root"></div>
+diff --git a/arrobe-site/package.json b/arrobe-site/package.json
+index 4414806..d795158 100644
+--- a/arrobe-site/package.json
++++ b/arrobe-site/package.json
+@@ -7,9 +7,17 @@
+     "dev": "vite",
+     "build": "vite build",
+     "lint": "oxlint",
+-    "preview": "vite preview"
++    "preview": "vite preview",
++    "db:migrate": "prisma migrate dev",
++    "db:deploy": "prisma migrate deploy",
++    "db:seed": "node --env-file-if-exists=.env prisma/seed.js",
++    "db:studio": "prisma studio",
++    "db:generate": "prisma generate",
++    "postinstall": "prisma generate"
+   },
+   "dependencies": {
++    "@prisma/client": "^7.10.0",
++    "bcryptjs": "^3.0.3",
+     "react": "^19.2.8",
+     "react-dom": "^19.2.8"
+   },
+@@ -18,6 +26,7 @@
+     "@types/react-dom": "^19.2.4",
+     "@vitejs/plugin-react": "^4.7.0",
+     "oxlint": "^1.79.0",
++    "prisma": "^7.10.0",
+     "vite": "^5.4.21"
+   }
+ }
+diff --git a/arrobe-site/prisma/migrations/20260909120000_init/migration.sql b/arrobe-site/prisma/migrations/20260909120000_init/migration.sql
+new file mode 100644
+index 0000000..1afe1c5
+--- /dev/null
++++ b/arrobe-site/prisma/migrations/20260909120000_init/migration.sql
+@@ -0,0 +1,89 @@
++-- CreateEnum
++CREATE TYPE "Status" AS ENUM ('DRAFT', 'PUBLISHED');
++
++-- CreateTable
++CREATE TABLE "admins" (
++    "id" TEXT NOT NULL,
++    "identifiant" TEXT NOT NULL,
++    "passwordHash" TEXT NOT NULL,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "admins_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "articles" (
++    "id" TEXT NOT NULL,
++    "slug" TEXT NOT NULL,
++    "title" TEXT NOT NULL,
++    "excerpt" TEXT NOT NULL,
++    "content" TEXT NOT NULL,
++    "image" TEXT,
++    "category" TEXT NOT NULL,
++    "readingTime" INTEGER NOT NULL,
++    "status" "Status" NOT NULL DEFAULT 'DRAFT',
++    "publishedAt" TIMESTAMP(3),
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "articles_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "events" (
++    "id" TEXT NOT NULL,
++    "slug" TEXT NOT NULL,
++    "title" TEXT NOT NULL,
++    "description" TEXT NOT NULL,
++    "content" TEXT NOT NULL,
++    "image" TEXT,
++    "category" TEXT NOT NULL,
++    "date" TIMESTAMP(3) NOT NULL,
++    "location" TEXT NOT NULL,
++    "organizer" TEXT NOT NULL,
++    "status" "Status" NOT NULL DEFAULT 'DRAFT',
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "events_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "registrations" (
++    "id" TEXT NOT NULL,
++    "eventId" TEXT NOT NULL,
++    "name" TEXT NOT NULL,
++    "email" TEXT NOT NULL,
++    "phone" TEXT,
++    "numberOfPeople" INTEGER NOT NULL DEFAULT 1,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "registrations_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE UNIQUE INDEX "admins_identifiant_key" ON "admins"("identifiant");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "articles_slug_key" ON "articles"("slug");
++
++-- CreateIndex
++CREATE INDEX "articles_status_publishedAt_idx" ON "articles"("status", "publishedAt" DESC);
++
++-- CreateIndex
++CREATE INDEX "articles_category_idx" ON "articles"("category");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "events_slug_key" ON "events"("slug");
++
++-- CreateIndex
++CREATE INDEX "events_status_date_idx" ON "events"("status", "date");
++
++-- CreateIndex
++CREATE INDEX "events_date_idx" ON "events"("date");
++
++-- CreateIndex
++CREATE INDEX "registrations_eventId_idx" ON "registrations"("eventId");
++
++-- AddForeignKey
++ALTER TABLE "registrations" ADD CONSTRAINT "registrations_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+diff --git a/arrobe-site/prisma/schema.prisma b/arrobe-site/prisma/schema.prisma
+new file mode 100644
+index 0000000..59da570
+--- /dev/null
++++ b/arrobe-site/prisma/schema.prisma
+@@ -0,0 +1,136 @@
++// ===================================================================
++// Schéma Prisma — Association @Rrobe
++// ===================================================================
++// Base PostgreSQL : le site est déployé sur Vercel, dont le système de
++// fichiers est éphémère. SQLite est donc exclu — la base serait remise
++// à zéro à chaque déploiement.
++//
++//   DATABASE_URL       connexion applicative (peut passer par un pooler)
++//   DIRECT_URL         connexion directe, utilisée par les migrations
++//
++// Si ton hébergeur ne fournit qu'une seule URL (pas de pooling),
++// mets la même valeur dans les deux variables.
++// ===================================================================
++
++generator client {
++  // `prisma-client` (et non l'ancien `prisma-client-js`) : c'est le
++  // générateur de Prisma 7, qui produit de l'ESM natif — indispensable
++  // ici puisque package.json déclare "type": "module".
++  provider = "prisma-client"
++
++  // Volontairement HORS de src/ : le client Prisma ne doit jamais
++  // partir dans le bundle navigateur. S'il vivait dans src/, un import
++  // maladroit depuis un composant React l'y ferait entrer sans bruit.
++  output   = "../prisma/generated/client"
++}
++
++datasource db {
++  provider  = "postgresql"
++  url       = env("DATABASE_URL")
++  directUrl = env("DIRECT_URL")
++}
++
++// -------------------------------------------------------------------
++// État de publication, partagé par les articles et les événements.
++// -------------------------------------------------------------------
++enum Status {
++  DRAFT
++  PUBLISHED
++}
++
++// -------------------------------------------------------------------
++// Admin
++// -------------------------------------------------------------------
++// Un seul compte, créé par le script de seed. L'identifiant est choisi
++// à la main (pas un e-mail) : c'est un login de back-office, il n'a pas
++// vocation à recevoir du courrier ni à être communiqué.
++//
++// Aucun mot de passe en clair n'est stocké : uniquement le hash bcrypt.
++// -------------------------------------------------------------------
++model Admin {
++  id           String   @id @default(cuid())
++  identifiant  String   @unique
++  passwordHash String
++  createdAt    DateTime @default(now())
++
++  @@map("admins")
++}
++
++// -------------------------------------------------------------------
++// Article de blog
++// -------------------------------------------------------------------
++model Article {
++  id           String    @id @default(cuid())
++  slug         String    @unique
++  title        String
++  excerpt      String
++  content      String    @db.Text // HTML long, pas de limite de 191 caractères
++  image        String?
++  category     String
++  readingTime  Int // en minutes
++  status       Status    @default(DRAFT)
++
++  // Renseignée uniquement au moment où l'article bascule en PUBLISHED.
++  // Reste null tant qu'il est en brouillon. Sert au tri et à l'affichage
++  // « Publié le … ». Ne jamais la confondre avec createdAt : un article
++  // peut être rédigé en janvier et publié en mars.
++  publishedAt  DateTime?
++
++  createdAt    DateTime  @default(now())
++  updatedAt    DateTime  @updatedAt
++
++  // Le site public ne lit que les articles publiés, du plus récent au
++  // plus ancien : cet index couvre exactement cette requête.
++  @@index([status, publishedAt(sort: Desc)])
++  @@index([category])
++  @@map("articles")
++}
++
++// -------------------------------------------------------------------
++// Événement
++// -------------------------------------------------------------------
++// Pas de champ « à venir / passé » en base : ce serait une donnée
++// périmée dès le lendemain. Le tri se calcule à la lecture en comparant
++// `date` à l'instant présent.
++// -------------------------------------------------------------------
++model Event {
++  id          String   @id @default(cuid())
++  slug        String   @unique
++  title       String
++  description String // résumé court, affiché dans les listes
++  content     String   @db.Text // HTML long, page de détail
++  image       String?
++  category    String
++  date        DateTime
++  location    String
++  organizer   String
++  status      Status   @default(DRAFT)
++  createdAt   DateTime @default(now())
++  updatedAt   DateTime @updatedAt
++
++  registrations Registration[]
++
++  @@index([status, date])
++  @@index([date])
++  @@map("events")
++}
++
++// -------------------------------------------------------------------
++// Inscription à un événement
++// -------------------------------------------------------------------
++model Registration {
++  id             String   @id @default(cuid())
++  eventId        String
++  name           String
++  email          String
++  phone          String?
++  numberOfPeople Int      @default(1)
++  createdAt      DateTime @default(now())
++
++  // Supprimer un événement supprime ses inscriptions : sans cela, la
++  // suppression échouerait sur la contrainte de clé étrangère.
++  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
++
++  @@index([eventId])
++  @@map("registrations")
++}
+diff --git a/arrobe-site/prisma/seed.js b/arrobe-site/prisma/seed.js
+new file mode 100644
+index 0000000..a8b8167
+--- /dev/null
++++ b/arrobe-site/prisma/seed.js
+@@ -0,0 +1,114 @@
++/**
++ * Seed — Association @Rrobe
++ * ===================================================================
++ * Crée UN SEUL compte administrateur, à partir de ADMIN_USERNAME et
++ * ADMIN_PASSWORD lus dans l'environnement. Aucun identifiant ni mot de
++ * passe n'est écrit en dur ici : ce fichier part sur GitHub, pas eux.
++ *
++ * Aucun article ni événement de démonstration n'est inséré. La base
++ * démarre vide, et le site affiche ses états « rien pour le moment ».
++ *
++ * Le script est idempotent : on peut le relancer sans risque. S'il
++ * trouve déjà le compte, il met le mot de passe à jour plutôt que de
++ * planter sur la contrainte d'unicité — c'est aussi la façon la plus
++ * simple de réinitialiser un mot de passe oublié.
++ *
++ *   Utilisation :  npm run db:seed
++ * ===================================================================
++ */
++
++import { PrismaClient } from "./generated/client/client.js";
++import bcrypt from "bcryptjs";
++
++const prisma = new PrismaClient();
++
++// Coût bcrypt. 12 ≈ 250 ms par vérification sur un CPU récent : assez
++// lent pour décourager une attaque par force brute, assez rapide pour
++// ne pas dépasser le délai d'une fonction serverless.
++const BCRYPT_ROUNDS = 12;
++
++function readConfig() {
++  const identifiant = process.env.ADMIN_USERNAME?.trim();
++  const password = process.env.ADMIN_PASSWORD;
++
++  const problems = [];
++
++  if (!identifiant) {
++    problems.push("ADMIN_USERNAME est absent ou vide.");
++  } else if (identifiant.length < 3) {
++    problems.push("ADMIN_USERNAME doit faire au moins 3 caractères.");
++  }
++
++  if (!password) {
++    problems.push("ADMIN_PASSWORD est absent ou vide.");
++  } else if (password.length < 12) {
++    // Ce compte ouvre l'accès à tout le back-office et sera exposé sur
++    // une URL publique. 12 caractères est un plancher, pas un objectif.
++    problems.push(
++      `ADMIN_PASSWORD doit faire au moins 12 caractères (actuellement ${password.length}).`
++    );
++  }
++
++  if (problems.length > 0) {
++    console.error("\n  Le seed ne peut pas s'exécuter :\n");
++    for (const problem of problems) console.error(`   - ${problem}`);
++    console.error(
++      "\n  Renseigne ces variables dans arrobe-site/.env " +
++        "(voir .env.example), puis relance `npm run db:seed`.\n"
++    );
++    process.exit(1);
++  }
++
++  return { identifiant, password };
++}
++
++async function main() {
++  const { identifiant, password } = readConfig();
++
++  const existing = await prisma.admin.count();
++  if (existing > 1) {
++    // Garde-fou : le site n'est prévu que pour un seul administrateur.
++    // Plusieurs comptes signifient que quelque chose a mal tourné, et
++    // on ne veut pas en rajouter un à l'aveugle.
++    console.error(
++      `\n  ${existing} comptes administrateur trouvés alors qu'un seul est attendu.` +
++        "\n  Vérifie la table `admins` avant de relancer le seed.\n"
++    );
++    process.exit(1);
++  }
++
++  const alreadyThere = await prisma.admin.findUnique({
++    where: { identifiant },
++    select: { id: true },
++  });
++
++  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
++
++  const admin = await prisma.admin.upsert({
++    where: { identifiant },
++    update: { passwordHash },
++    create: { identifiant, passwordHash },
++  });
++
++  const [articles, events] = await Promise.all([
++    prisma.article.count(),
++    prisma.event.count(),
++  ]);
++
++  console.log(
++    `\n  Compte administrateur « ${admin.identifiant} » ` +
++      `${alreadyThere ? "mis à jour (mot de passe réinitialisé)" : "créé"}.`
++  );
++  console.log(`  Articles en base : ${articles}`);
++  console.log(`  Événements en base : ${events}`);
++  console.log("  Aucune donnée de démonstration insérée.\n");
++}
++
++main()
++  .catch((error) => {
++    console.error("\n  Le seed a échoué :\n", error, "\n");
++    process.exitCode = 1;
++  })
++  .finally(async () => {
++    await prisma.$disconnect();
++  });
+diff --git a/arrobe-site/src/App.css b/arrobe-site/src/App.css
+deleted file mode 100644
+index f90339d..0000000
+--- a/arrobe-site/src/App.css
++++ /dev/null
+@@ -1,184 +0,0 @@
+-.counter {
+-  font-size: 16px;
+-  padding: 5px 10px;
+-  border-radius: 5px;
+-  color: var(--accent);
+-  background: var(--accent-bg);
+-  border: 2px solid transparent;
+-  transition: border-color 0.3s;
+-  margin-bottom: 24px;
+-
+-  &:hover {
+-    border-color: var(--accent-border);
+-  }
+-  &:focus-visible {
+-    outline: 2px solid var(--accent);
+-    outline-offset: 2px;
+-  }
+-}
+-
+-.hero {
+-  position: relative;
+-
+-  .base,
+-  .framework,
+-  .vite {
+-    inset-inline: 0;
+-    margin: 0 auto;
+-  }
+-
+-  .base {
+-    width: 170px;
+-    position: relative;
+-    z-index: 0;
+-  }
+-
+-  .framework,
+-  .vite {
+-    position: absolute;
+-  }
+-
+-  .framework {
+-    z-index: 1;
+-    top: 34px;
+-    height: 28px;
+-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
+-      scale(1.4);
+-  }
+-
+-  .vite {
+-    z-index: 0;
+-    top: 107px;
+-    height: 26px;
+-    width: auto;
+-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
+-      scale(0.8);
+-  }
+-}
+-
+-#center {
+-  display: flex;
+-  flex-direction: column;
+-  gap: 25px;
+-  place-content: center;
+-  place-items: center;
+-  flex-grow: 1;
+-
+-  @media (max-width: 1024px) {
+-    padding: 32px 20px 24px;
+-    gap: 18px;
+-  }
+-}
+-
+-#next-steps {
+-  display: flex;
+-  border-top: 1px solid var(--border);
+-  text-align: left;
+-
+-  & > div {
+-    flex: 1 1 0;
+-    padding: 32px;
+-    @media (max-width: 1024px) {
+-      padding: 24px 20px;
+-    }
+-  }
+-
+-  .icon {
+-    margin-bottom: 16px;
+-    width: 22px;
+-    height: 22px;
+-  }
+-
+-  @media (max-width: 1024px) {
+-    flex-direction: column;
+-    text-align: center;
+-  }
+-}
+-
+-#docs {
+-  border-right: 1px solid var(--border);
+-
+-  @media (max-width: 1024px) {
+-    border-right: none;
+-    border-bottom: 1px solid var(--border);
+-  }
+-}
+-
+-#next-steps ul {
+-  list-style: none;
+-  padding: 0;
+-  display: flex;
+-  gap: 8px;
+-  margin: 32px 0 0;
+-
+-  .logo {
+-    height: 18px;
+-  }
+-
+-  a {
+-    color: var(--text-h);
+-    font-size: 16px;
+-    border-radius: 6px;
+-    background: var(--social-bg);
+-    display: flex;
+-    padding: 6px 12px;
+-    align-items: center;
+-    gap: 8px;
+-    text-decoration: none;
+-    transition: box-shadow 0.3s;
+-
+-    &:hover {
+-      box-shadow: var(--shadow);
+-    }
+-    .button-icon {
+-      height: 18px;
+-      width: 18px;
+-    }
+-  }
+-
+-  @media (max-width: 1024px) {
+-    margin-top: 20px;
+-    flex-wrap: wrap;
+-    justify-content: center;
+-
+-    li {
+-      flex: 1 1 calc(50% - 8px);
+-    }
+-
+-    a {
+-      width: 100%;
+-      justify-content: center;
+-      box-sizing: border-box;
+-    }
+-  }
+-}
+-
+-#spacer {
+-  height: 88px;
+-  border-top: 1px solid var(--border);
+-  @media (max-width: 1024px) {
+-    height: 48px;
+-  }
+-}
+-
+-.ticks {
+-  position: relative;
+-  width: 100%;
+-
+-  &::before,
+-  &::after {
+-    content: '';
+-    position: absolute;
+-    top: -4.5px;
+-    border: 5px solid transparent;
+-  }
+-
+-  &::before {
+-    left: 0;
+-    border-left-color: var(--border);
+-  }
+-  &::after {
+-    right: 0;
+-    border-right-color: var(--border);
+-  }
+-}
+diff --git a/arrobe-site/src/index.css b/arrobe-site/src/index.css
+deleted file mode 100644
+index 2c84af0..0000000
+--- a/arrobe-site/src/index.css
++++ /dev/null
+@@ -1,111 +0,0 @@
+-:root {
+-  --text: #6b6375;
+-  --text-h: #08060d;
+-  --bg: #fff;
+-  --border: #e5e4e7;
+-  --code-bg: #f4f3ec;
+-  --accent: #aa3bff;
+-  --accent-bg: rgba(170, 59, 255, 0.1);
+-  --accent-border: rgba(170, 59, 255, 0.5);
+-  --social-bg: rgba(244, 243, 236, 0.5);
+-  --shadow:
+-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+-
+-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+-  --mono: ui-monospace, Consolas, monospace;
+-
+-  font: 18px/145% var(--sans);
+-  letter-spacing: 0.18px;
+-  color-scheme: light dark;
+-  color: var(--text);
+-  background: var(--bg);
+-  font-synthesis: none;
+-  text-rendering: optimizeLegibility;
+-  -webkit-font-smoothing: antialiased;
+-  -moz-osx-font-smoothing: grayscale;
+-
+-  @media (max-width: 1024px) {
+-    font-size: 16px;
+-  }
+-}
+-
+-@media (prefers-color-scheme: dark) {
+-  :root {
+-    --text: #9ca3af;
+-    --text-h: #f3f4f6;
+-    --bg: #16171d;
+-    --border: #2e303a;
+-    --code-bg: #1f2028;
+-    --accent: #c084fc;
+-    --accent-bg: rgba(192, 132, 252, 0.15);
+-    --accent-border: rgba(192, 132, 252, 0.5);
+-    --social-bg: rgba(47, 48, 58, 0.5);
+-    --shadow:
+-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+-  }
+-
+-  #social .button-icon {
+-    filter: invert(1) brightness(2);
+-  }
+-}
+-
+-body {
+-  margin: 0;
+-}
+-
+-#root {
+-  width: 1126px;
+-  max-width: 100%;
+-  margin: 0 auto;
+-  text-align: center;
+-  border-inline: 1px solid var(--border);
+-  min-height: 100svh;
+-  display: flex;
+-  flex-direction: column;
+-  box-sizing: border-box;
+-}
+-
+-h1,
+-h2 {
+-  font-family: var(--heading);
+-  font-weight: 500;
+-  color: var(--text-h);
+-}
+-
+-h1 {
+-  font-size: 56px;
+-  letter-spacing: -1.68px;
+-  margin: 32px 0;
+-  @media (max-width: 1024px) {
+-    font-size: 36px;
+-    margin: 20px 0;
+-  }
+-}
+-h2 {
+-  font-size: 24px;
+-  line-height: 118%;
+-  letter-spacing: -0.24px;
+-  margin: 0 0 8px;
+-  @media (max-width: 1024px) {
+-    font-size: 20px;
+-  }
+-}
+-p {
+-  margin: 0;
+-}
+-
+-code,
+-.counter {
+-  font-family: var(--mono);
+-  display: inline-flex;
+-  border-radius: 4px;
+-  color: var(--text-h);
+-}
+-
+-code {
+-  font-size: 15px;
+-  line-height: 135%;
+-  padding: 4px 8px;
+-  background: var(--code-bg);
+-}
+diff --git a/arrobe-site/src/pages/Blog.jsx b/arrobe-site/src/pages/Blog.jsx
+index 11d971d..51b4fa0 100644
+--- a/arrobe-site/src/pages/Blog.jsx
++++ b/arrobe-site/src/pages/Blog.jsx
+@@ -131,8 +131,18 @@ export default function Blog() {
+           </div>
+ 
+           {visiblePosts.length === 0 ? (
+-            <p className="blog__empty">
+-              Aucun article dans cette catégorie pour le moment. Revenez bientôt.
++            /* Deux situations très différentes : soit le blog est encore
++               vide, soit le filtre choisi ne renvoie rien. Le message le
++               dit, sinon on laisse croire à un bug. */
++            <p className="empty">
++              <span className="empty__title">
++                {POSTS.length === 0
++                  ? "Aucun article pour le moment"
++                  : "Aucun article dans cette catégorie"}
++              </span>
++              {POSTS.length === 0
++                ? "Les premiers articles de l'association seront publiés ici prochainement."
++                : "Essayez une autre catégorie pour retrouver nos publications."}
+             </p>
+           ) : (
+             <div
+diff --git a/arrobe-site/src/pages/Events.jsx b/arrobe-site/src/pages/Events.jsx
+index 6c31bc3..6258fc1 100644
+--- a/arrobe-site/src/pages/Events.jsx
++++ b/arrobe-site/src/pages/Events.jsx
+@@ -5,6 +5,19 @@ import atelierPleinAir from "../assets/Image8.jpg";
+ 
+ const INTRO_ALT = "Atelier informatique en plein air lors de la fête du village";
+ 
++/**
++ * Affiché à la place de la grille quand la liste est vide.
++ * Tant que la base est neuve, c'est ce que verront les visiteurs.
++ */
++function EmptyState({ children }) {
++  return (
++    <p className="empty">
++      <span className="empty__title">Aucun événement pour le moment</span>
++      {children}
++    </p>
++  );
++}
++
+ export default function Events() {
+   const [titleRef, titleShown] = useReveal();
+   const [imgRef, imgShown] = useReveal({ threshold: 0.2 });
+@@ -66,16 +79,23 @@ export default function Events() {
+             Prochain évènement
+           </h2>
+ 
+-          <div className="event-grid">
+-            {UPCOMING_EVENTS.map((event, i) => (
+-              <EventCard
+-                key={event.id}
+-                event={event}
+-                cta="S'inscrire"
+-                index={i}
+-              />
+-            ))}
+-          </div>
++          {UPCOMING_EVENTS.length === 0 ? (
++            <EmptyState>
++              Aucune date n'est encore programmée. Revenez bientôt&nbsp;: les
++              prochains ateliers seront annoncés ici.
++            </EmptyState>
++          ) : (
++            <div className="event-grid">
++              {UPCOMING_EVENTS.map((event, i) => (
++                <EventCard
++                  key={event.id}
++                  event={event}
++                  cta="S'inscrire"
++                  index={i}
++                />
++              ))}
++            </div>
++          )}
+         </div>
+       </section>
+ 
+@@ -88,11 +108,18 @@ export default function Events() {
+             Evenement passés
+           </h2>
+ 
+-          <div className="event-grid">
+-            {PAST_EVENTS.map((event, i) => (
+-              <EventCard key={event.id} event={event} cta="Voir" index={i} />
+-            ))}
+-          </div>
++          {PAST_EVENTS.length === 0 ? (
++            <EmptyState>
++              Les événements déjà passés apparaîtront ici une fois la date
++              écoulée.
++            </EmptyState>
++          ) : (
++            <div className="event-grid">
++              {PAST_EVENTS.map((event, i) => (
++                <EventCard key={event.id} event={event} cta="Voir" index={i} />
++              ))}
++            </div>
++          )}
+         </div>
+       </section>
+     </main>
+diff --git a/arrobe-site/src/styles/global.css b/arrobe-site/src/styles/global.css
+index b075282..864a9b3 100644
+--- a/arrobe-site/src/styles/global.css
++++ b/arrobe-site/src/styles/global.css
+@@ -1138,9 +1138,25 @@ input:focus-visible {
+   color: var(--white);
+ }
+ 
++/* --- État vide, partagé par le blog et les événements -------------
++   Affiché quand la base ne contient encore rien : mieux vaut une
++   phrase claire qu'une grille vide sans explication. */
++.empty,
+ .blog__empty {
+-  padding: 48px 0;
++  padding: 44px 26px;
++  border: 1.5px dashed #cfd6e6;
++  border-radius: 16px;
++  background: var(--white);
+   color: var(--muted);
++  text-align: center;
++}
++
++.empty__title {
++  display: block;
++  margin-bottom: 6px;
++  font-size: 1.08rem;
++  font-weight: 600;
++  color: var(--ink);
+ }
+ 
+ /* --- Grille des articles ----------------------------------------- */
