@@ -1,16 +1,3 @@
-/**
- * Validation des entrées
- * ===================================================================
- * Validation écrite à la main plutôt qu'avec une bibliothèque : les
- * quatre modèles sont simples et stables, une dépendance de plus
- * n'apporterait rien ici.
- *
- * Principe : on ne fait jamais confiance au corps de la requête, même
- * sur les routes protégées. Chaque fonction renvoie
- *   { valid: true, value } ou { valid: false, errors: [...] }
- * ===================================================================
- */
-
 const STATUSES = ["DRAFT", "PUBLISHED"];
 
 /** Transforme un titre en slug d'URL : accents retirés, tirets. */

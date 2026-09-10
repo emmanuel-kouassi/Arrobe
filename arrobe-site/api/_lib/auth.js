@@ -1,18 +1,3 @@
-/**
- * Authentification administrateur
- * ===================================================================
- * Jeton JWT signé en HS256, transmis dans l'en-tête
- * `Authorization: Bearer <token>`.
- *
- * Choix assumé : le jeton n'est pas dans un cookie httpOnly. Un cookie
- * serait mieux protégé d'une faille XSS, mais imposerait une gestion
- * CSRF. Pour un back-office à un seul compte, le jeton porteur avec
- * une durée de vie courte est un compromis raisonnable. Côté front,
- * range-le dans sessionStorage plutôt que localStorage : il disparaît
- * à la fermeture de l'onglet.
- * ===================================================================
- */
-
 import { SignJWT, jwtVerify } from "jose";
 
 /** Durée de validité d'une session admin. */
@@ -84,15 +69,6 @@ export async function readAdmin(req) {
   }
 }
 
-/**
- * Garde pour les routes réservées à l'administrateur.
- *
- *   const admin = await requireAdmin(req, res);
- *   if (!admin) return;   // la réponse 401 a déjà été envoyée
- *
- * On renvoie systématiquement 401 sans préciser si le jeton est absent,
- * malformé ou expiré : inutile de renseigner qui tâtonne.
- */
 export async function requireAdmin(req, res) {
   const admin = await readAdmin(req);
 
