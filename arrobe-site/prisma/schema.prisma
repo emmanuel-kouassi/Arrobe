@@ -13,10 +13,10 @@
 // ===================================================================
 
 generator client {
-  // `prisma-client` (et non l'ancien `prisma-client-js`) : c'est le
-  // générateur de Prisma 7, qui produit de l'ESM natif — indispensable
-  // ici puisque package.json déclare "type": "module".
-  provider = "prisma-client"
+  provider            = "prisma-client"
+  output              = "../prisma/generated/client"
+  importFileExtension = "js"
+}
 
   // Volontairement HORS de src/ : le client Prisma ne doit jamais
   // partir dans le bundle navigateur. S'il vivait dans src/, un import
