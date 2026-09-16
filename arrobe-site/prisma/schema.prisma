@@ -18,12 +18,6 @@ generator client {
   importFileExtension = "js"
 }
 
-  // Volontairement HORS de src/ : le client Prisma ne doit jamais
-  // partir dans le bundle navigateur. S'il vivait dans src/, un import
-  // maladroit depuis un composant React l'y ferait entrer sans bruit.
-  output   = "../prisma/generated/client"
-}
-
 datasource db {
   // Depuis Prisma 7, `url` et `directUrl` ne sont plus acceptés ici.
   // L'URL des migrations vit dans prisma.config.js, celle de
