@@ -1,0 +1,58 @@
+diff --git a/arrobe-site/prisma/migrations/20260916120000_add_subscriber/migration.sql b/arrobe-site/prisma/migrations/20260916120000_add_subscriber/migration.sql
+new file mode 100644
+index 0000000..c60a7e4
+--- /dev/null
++++ b/arrobe-site/prisma/migrations/20260916120000_add_subscriber/migration.sql
+@@ -0,0 +1,18 @@
++-- CreateTable
++-- Abonnés à la newsletter. `unsubscribeToken` n'a pas de valeur par
++-- défaut côté base : c'est le client Prisma qui le génère
++-- (@default(uuid()) → crypto.randomUUID()).
++CREATE TABLE "subscribers" (
++    "id" TEXT NOT NULL,
++    "email" TEXT NOT NULL,
++    "unsubscribeToken" TEXT NOT NULL,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "subscribers_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE UNIQUE INDEX "subscribers_email_key" ON "subscribers"("email");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "subscribers_unsubscribeToken_key" ON "subscribers"("unsubscribeToken");
+diff --git a/arrobe-site/prisma/schema.prisma b/arrobe-site/prisma/schema.prisma
+index 4485ab5..e3633d3 100644
+--- a/arrobe-site/prisma/schema.prisma
++++ b/arrobe-site/prisma/schema.prisma
+@@ -143,3 +143,29 @@ model Registration {
+   @@index([eventId])
+   @@map("registrations")
+ }
++
++// -------------------------------------------------------------------
++// Abonné à la newsletter
++// -------------------------------------------------------------------
++// Aucune donnée personnelle au-delà de l'adresse : le formulaire ne
++// demande que l'e-mail, la base n'en stocke pas davantage.
++//
++// `email` doit être normalisé AVANT l'écriture (trim + minuscules) :
++// la contrainte d'unicité de PostgreSQL est sensible à la casse, et
++// « Jean@x.fr » / « jean@x.fr » deviendraient sinon deux abonnés.
++//
++// `unsubscribeToken` sert au lien « Se désabonner » de chaque e-mail.
++// Il doit être imprévisible : c'est lui seul qui autorise la
++// désinscription, sans connexion. D'où `uuid()` et non `cuid()` —
++// Prisma le produit avec crypto.randomUUID(), soit 122 bits d'aléa
++// issus du générateur cryptographique. Un cuid est conçu pour être
++// unique, pas pour être secret.
++// -------------------------------------------------------------------
++model Subscriber {
++  id               String   @id @default(cuid())
++  email            String   @unique
++  unsubscribeToken String   @unique @default(uuid())
++  createdAt        DateTime @default(now())
++
++  @@map("subscribers")
++}

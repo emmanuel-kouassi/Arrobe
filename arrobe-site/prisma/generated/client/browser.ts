@@ -37,3 +37,8 @@ export type Event = Prisma.EventModel
  * 
  */
 export type Registration = Prisma.RegistrationModel
+/**
+ * Model Subscriber
+ * 
+ */
+export type Subscriber = Prisma.SubscriberModel

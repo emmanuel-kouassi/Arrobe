@@ -143,3 +143,29 @@ model Registration {
   @@index([eventId])
   @@map("registrations")
 }
+
+// -------------------------------------------------------------------
+// Abonné à la newsletter
+// -------------------------------------------------------------------
+// Aucune donnée personnelle au-delà de l'adresse : le formulaire ne
+// demande que l'e-mail, la base n'en stocke pas davantage.
+//
+// `email` doit être normalisé AVANT l'écriture (trim + minuscules) :
+// la contrainte d'unicité de PostgreSQL est sensible à la casse, et
+// « Jean@x.fr » / « jean@x.fr » deviendraient sinon deux abonnés.
+//
+// `unsubscribeToken` sert au lien « Se désabonner » de chaque e-mail.
+// Il doit être imprévisible : c'est lui seul qui autorise la
+// désinscription, sans connexion. D'où `uuid()` et non `cuid()` —
+// Prisma le produit avec crypto.randomUUID(), soit 122 bits d'aléa
+// issus du générateur cryptographique. Un cuid est conçu pour être
+// unique, pas pour être secret.
+// -------------------------------------------------------------------
+model Subscriber {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  unsubscribeToken String   @unique @default(uuid())
+  createdAt        DateTime @default(now())
+
+  @@map("subscribers")
+}
