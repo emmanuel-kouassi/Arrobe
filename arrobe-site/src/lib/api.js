@@ -200,6 +200,21 @@ export const api = {
     });
   },
 
+  /**
+   * Inscription à la newsletter. Résout dans les deux cas « réussis » :
+   * `status` vaut "subscribed" ou "already-subscribed". Seule une
+   * adresse invalide ou une panne lève une ApiError.
+   *
+   * `website` est le champ piège à robots : toujours vide pour un
+   * humain.
+   */
+  async subscribeNewsletter(email, website = "") {
+    return request("/api/newsletter/subscribe", {
+      method: "POST",
+      body: { email, website },
+    });
+  },
+
   async listRegistrations(slug) {
     return request(`/api/events/${encodeURIComponent(slug)}/registrations`, {
       auth: true,

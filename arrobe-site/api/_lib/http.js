@@ -20,6 +20,33 @@ export function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+/**
+ * Renvoie une page HTML complète.
+ *
+ * Réservé aux routes ouvertes directement dans le navigateur depuis un
+ * e-mail (lien de désinscription) : là, une réponse JSON serait
+ * illisible pour la personne qui clique.
+ */
+export function sendHtml(res, status, html) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  // Page sans script : on interdit tout sauf les styles en ligne, la
+  // police du site et les formulaires vers le site lui-même. Si un jour
+  // un contenu y était injecté par erreur, il ne pourrait ni exécuter
+  // de code ni envoyer de données ailleurs.
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; " +
+      "font-src https://fonts.gstatic.com; img-src 'self'; base-uri 'none'; form-action 'self'"
+  );
+  // L'URL contient un jeton personnel : il ne doit ni fuiter vers un
+  // autre site via l'en-tête Referer, ni être indexé.
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  res.end(html);
+}
+
 export function sendError(res, status, message, details) {
   return sendJson(res, status, details ? { error: message, details } : { error: message });
 }

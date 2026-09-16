@@ -20,6 +20,8 @@ import event from "../api/events/[slug].js";
 import register from "../api/events/[slug]/register.js";
 import registrations from "../api/events/[slug]/registrations.js";
 import upload from "../api/upload.js";
+import subscribe from "../api/newsletter/subscribe.js";
+import unsubscribe from "../api/newsletter/unsubscribe/[token].js";
 
 const PORT = Number(process.env.API_PORT ?? 3001);
 
@@ -40,7 +42,9 @@ const ROUTES = [
   { pattern: ["api", "events", ":slug"], handler: event },
   { pattern: ["api", "events", ":slug", "register"], handler: register },
   { pattern: ["api", "events", ":slug", "registrations"], handler: registrations },
-    { pattern: ["api", "upload"], handler: upload },
+  { pattern: ["api", "upload"], handler: upload },
+  { pattern: ["api", "newsletter", "subscribe"], handler: subscribe },
+  { pattern: ["api", "newsletter", "unsubscribe", ":token"], handler: unsubscribe },
 ];
 
 function match(segments) {

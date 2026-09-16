@@ -1,0 +1,932 @@
+diff --git a/arrobe-site/api/_lib/http.js b/arrobe-site/api/_lib/http.js
+index 1631674..895844a 100644
+--- a/arrobe-site/api/_lib/http.js
++++ b/arrobe-site/api/_lib/http.js
+@@ -20,6 +20,33 @@ export function sendJson(res, status, payload) {
+   res.end(JSON.stringify(payload));
+ }
+ 
++/**
++ * Renvoie une page HTML complète.
++ *
++ * Réservé aux routes ouvertes directement dans le navigateur depuis un
++ * e-mail (lien de désinscription) : là, une réponse JSON serait
++ * illisible pour la personne qui clique.
++ */
++export function sendHtml(res, status, html) {
++  res.statusCode = status;
++  res.setHeader("Content-Type", "text/html; charset=utf-8");
++  res.setHeader("Cache-Control", "no-store");
++  // Page sans script : on interdit tout sauf les styles en ligne, la
++  // police du site et les formulaires vers le site lui-même. Si un jour
++  // un contenu y était injecté par erreur, il ne pourrait ni exécuter
++  // de code ni envoyer de données ailleurs.
++  res.setHeader(
++    "Content-Security-Policy",
++    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; " +
++      "font-src https://fonts.gstatic.com; img-src 'self'; base-uri 'none'; form-action 'self'"
++  );
++  // L'URL contient un jeton personnel : il ne doit ni fuiter vers un
++  // autre site via l'en-tête Referer, ni être indexé.
++  res.setHeader("Referrer-Policy", "no-referrer");
++  res.setHeader("X-Robots-Tag", "noindex, nofollow");
++  res.end(html);
++}
++
+ export function sendError(res, status, message, details) {
+   return sendJson(res, status, details ? { error: message, details } : { error: message });
+ }
+diff --git a/arrobe-site/api/_lib/validate.js b/arrobe-site/api/_lib/validate.js
+index b2c1146..dc5a321 100644
+--- a/arrobe-site/api/_lib/validate.js
++++ b/arrobe-site/api/_lib/validate.js
+@@ -179,6 +179,27 @@ export function validateEvent(body, { partial = false } = {}) {
+   return errors.length ? { valid: false, errors } : { valid: true, value };
+ }
+ 
++/**
++ * Lit et normalise une adresse e-mail.
++ *
++ * Volontairement permissif : on écarte les saisies manifestement
++ * fausses sans prétendre valider un e-mail par expression régulière,
++ * exercice perdu d'avance. La vraie vérification serait un envoi.
++ *
++ * La mise en minuscules n'est pas cosmétique : la contrainte d'unicité
++ * de PostgreSQL est sensible à la casse. Sans elle, « Jean@x.fr » et
++ * « jean@x.fr » seraient deux abonnés distincts et recevraient chaque
++ * newsletter en double.
++ */
++function readEmail(errors, body) {
++  const email = str(body.email);
++  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 200) {
++    errors.push("email doit être une adresse valide.");
++    return undefined;
++  }
++  return email.toLowerCase();
++}
++
+ /** Valide une inscription à un événement. Route publique : soyons stricts. */
+ export function validateRegistration(body) {
+   const errors = [];
+@@ -187,15 +208,8 @@ export function validateRegistration(body) {
+   const name = requireText(errors, body, "name", { max: 120, min: 2 });
+   if (name) value.name = name;
+ 
+-  const email = str(body.email);
+-  // Volontairement permissif : on écarte les saisies manifestement
+-  // fausses sans prétendre valider un e-mail par expression régulière,
+-  // exercice perdu d'avance. La vraie vérification serait un envoi.
+-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 200) {
+-    errors.push("email doit être une adresse valide.");
+-  } else {
+-    value.email = email.toLowerCase();
+-  }
++  const email = readEmail(errors, body);
++  if (email) value.email = email;
+ 
+   if (body.phone !== undefined && body.phone !== null && body.phone !== "") {
+     const phone = str(body.phone);
+@@ -217,3 +231,10 @@ export function validateRegistration(body) {
+ 
+   return errors.length ? { valid: false, errors } : { valid: true, value };
+ }
++
++/** Valide une inscription à la newsletter : l'adresse, rien d'autre. */
++export function validateSubscriber(body) {
++  const errors = [];
++  const email = readEmail(errors, body);
++  return errors.length ? { valid: false, errors } : { valid: true, value: { email } };
++}
+diff --git a/arrobe-site/api/newsletter/subscribe.js b/arrobe-site/api/newsletter/subscribe.js
+new file mode 100644
+index 0000000..1cf9541
+--- /dev/null
++++ b/arrobe-site/api/newsletter/subscribe.js
+@@ -0,0 +1,93 @@
++/**
++ * POST /api/newsletter/subscribe
++ * ===================================================================
++ * Inscription à la newsletter. Route PUBLIQUE, sans authentification.
++ *
++ *   Corps attendu : { "email": "jean@exemple.fr" }
++ *
++ *   201  { status: "subscribed",         email, message }
++ *   200  { status: "already-subscribed", email, message }
++ *   422  { error, details }                adresse invalide
++ *
++ * « Déjà inscrit » n'est PAS une erreur : la personne a obtenu ce
++ * qu'elle voulait. On répond donc 200 avec un statut explicite, et le
++ * formulaire affiche un message au lieu d'un échec.
++ * ===================================================================
++ */
++
++import { randomUUID } from "node:crypto";
++
++import { prisma } from "../_lib/prisma.js";
++import { route, readJsonBody, sendJson, sendError } from "../_lib/http.js";
++import { validateSubscriber } from "../_lib/validate.js";
++
++function alreadySubscribed(res, email) {
++  return sendJson(res, 200, {
++    status: "already-subscribed",
++    email,
++    message: "Cette adresse est déjà inscrite à la newsletter.",
++  });
++}
++
++async function subscribe(req, res) {
++  const raw = await readJsonBody(req);
++  // `null` ou un tableau sont du JSON valide : on les ramène à un objet
++  // vide pour tomber sur le refus 422 plutôt que sur une erreur 500.
++  const body = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
++
++  // Piège à robots : le formulaire contient un champ `website` masqué,
++  // qu'un humain ne voit ni ne remplit. S'il arrive rempli, on répond
++  // comme si tout s'était bien passé, sans rien écrire — un robot qui
++  // reçoit une erreur apprend à contourner le piège.
++  //
++  // Enjeu réel : chaque adresse inscrite recevra un e-mail à chaque
++  // publication. Des centaines de fausses adresses épuiseraient le
++  // quota Brevo et dégraderaient la réputation de l'expéditeur.
++  if (typeof body.website === "string" && body.website.trim() !== "") {
++    return sendJson(res, 201, {
++      status: "subscribed",
++      email: String(body.email ?? "").slice(0, 200),
++      message: "Inscription enregistrée.",
++    });
++  }
++
++  const check = validateSubscriber(body);
++  if (!check.valid) {
++    return sendError(res, 422, "Adresse e-mail invalide.", check.errors);
++  }
++
++  const { email } = check.value;
++
++  const existing = await prisma.subscriber.findUnique({
++    where: { email },
++    select: { id: true },
++  });
++  if (existing) return alreadySubscribed(res, email);
++
++  try {
++    await prisma.subscriber.create({
++      // Le schéma sait générer le jeton seul (@default(uuid())), mais on
++      // le fournit explicitement : sa génération ne dépend ainsi d'aucun
++      // réglage Prisma, et qui lit cette route voit d'où il vient.
++      data: { email, unsubscribeToken: randomUUID() },
++    });
++  } catch (error) {
++    // Deux envois quasi simultanés (double clic, réseau lent) peuvent
++    // passer tous deux la vérification ci-dessus. Le second bute alors
++    // sur la contrainte d'unicité : c'est un « déjà inscrit », pas une
++    // panne.
++    if (error?.code === "P2002") return alreadySubscribed(res, email);
++    throw error;
++  }
++
++  // On ne renvoie jamais le jeton : il n'a sa place que dans les
++  // e-mails, sinon n'importe quel script pourrait désinscrire la
++  // personne qu'il vient d'inscrire.
++  return sendJson(res, 201, {
++    status: "subscribed",
++    email,
++    message: "Inscription enregistrée.",
++  });
++}
++
++export default (req, res) => route(req, res, { POST: subscribe });
+diff --git a/arrobe-site/api/newsletter/unsubscribe/[token].js b/arrobe-site/api/newsletter/unsubscribe/[token].js
+new file mode 100644
+index 0000000..b9fb38b
+--- /dev/null
++++ b/arrobe-site/api/newsletter/unsubscribe/[token].js
+@@ -0,0 +1,265 @@
++/**
++ * /api/newsletter/unsubscribe/:token
++ * ===================================================================
++ * Lien « Se désabonner » placé en bas de chaque newsletter.
++ *
++ *   GET   affiche une page de confirmation. Ne modifie RIEN.
++ *   POST  supprime l'abonné et affiche la confirmation.
++ *
++ * Pourquoi deux temps : les filtres de sécurité de certaines
++ * messageries (Microsoft Defender en entreprise, notamment) ouvrent
++ * les liens des e-mails pour les analyser. Si un simple GET
++ * désinscrivait, ces robots désabonneraient des gens à leur insu. Un
++ * robot suit un lien ; il ne soumet pas de formulaire.
++ *
++ * Le POST sert aussi au désabonnement « en un clic » des messageries
++ * (norme RFC 8058) : Gmail ou Yahoo envoient un POST sur cette même
++ * URL quand l'en-tête List-Unsubscribe-Post est présent dans le mail.
++ * Rien à ajouter ici pour le prendre en charge.
++ *
++ * On y arrive depuis une boîte mail : les réponses sont de vraies
++ * pages HTML, sans script, indépendantes du bundle React. Tout est
++ * idempotent : un second envoi ou un vieux lien donnent une page
++ * claire, jamais une erreur technique.
++ * ===================================================================
++ */
++
++import { prisma } from "../../_lib/prisma.js";
++import { route, sendHtml, getQuery, getSlug } from "../../_lib/http.js";
++
++/** Forme d'un jeton émis par crypto.randomUUID(). */
++const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
++
++/**
++ * Échappement HTML. Indispensable pour l'adresse e-mail : la
++ * validation d'inscription est permissive et laisse passer des
++ * caractères comme < ou ".
++ */
++function escapeHtml(value) {
++  return String(value)
++    .replaceAll("&", "&amp;")
++    .replaceAll("<", "&lt;")
++    .replaceAll(">", "&gt;")
++    .replaceAll('"', "&quot;")
++    .replaceAll("'", "&#39;");
++}
++
++/**
++ * Gabarit commun. `lead`, `note` et `actions` sont du HTML écrit dans
++ * ce fichier ; toute donnée venant de la base doit passer par
++ * escapeHtml() avant d'y être insérée.
++ */
++function page({ title, lead, note, actions }) {
++  return `<!doctype html>
++<html lang="fr">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1">
++  <meta name="robots" content="noindex, nofollow">
++  <title>${title} — Association @Rrobe</title>
++  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
++  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap">
++  <style>
++    :root {
++      --navy: #1e2e5e;
++      --navy-deep: #16264d;
++      --green: #14a26a;
++      --page: #f7f9fc;
++      --muted: #5a6885;
++    }
++    * { box-sizing: border-box; }
++    body {
++      margin: 0;
++      min-height: 100vh;
++      display: grid;
++      place-items: center;
++      padding: 24px;
++      background: var(--page);
++      color: var(--navy-deep);
++      font-family: "Poppins", "Segoe UI", system-ui, -apple-system, sans-serif;
++      font-size: 17px;
++      line-height: 1.65;
++      -webkit-font-smoothing: antialiased;
++    }
++    main {
++      width: 100%;
++      max-width: 560px;
++      padding: clamp(28px, 6vw, 48px);
++      border-radius: 22px;
++      background: #fff;
++      box-shadow: 0 26px 60px rgba(22, 38, 77, 0.14);
++    }
++    .brand {
++      margin: 0 0 28px;
++      font-size: 0.95rem;
++      font-weight: 600;
++      color: var(--muted);
++    }
++    h1 {
++      position: relative;
++      margin: 0 0 12px;
++      padding-left: 18px;
++      font-size: clamp(1.4rem, 4.5vw, 1.8rem);
++      font-weight: 700;
++      line-height: 1.3;
++    }
++    h1::before {
++      content: "";
++      position: absolute;
++      left: 0;
++      top: 5px;
++      bottom: 7px;
++      width: 7px;
++      background: var(--green);
++    }
++    p { margin: 0; }
++    .lead { max-width: 60ch; }
++    .lead strong { font-weight: 600; overflow-wrap: anywhere; }
++    .note { margin-top: 12px; font-size: 0.92rem; color: var(--muted); }
++    .actions {
++      display: flex;
++      flex-wrap: wrap;
++      align-items: center;
++      gap: 12px 24px;
++      margin-top: 30px;
++    }
++    .actions form { margin: 0; }
++    .btn {
++      display: inline-flex;
++      align-items: center;
++      justify-content: center;
++      min-height: 44px;
++      padding: 11px 24px;
++      border: 0;
++      border-radius: 8px;
++      background: var(--navy);
++      color: #fff;
++      font: inherit;
++      font-weight: 600;
++      text-decoration: none;
++      cursor: pointer;
++    }
++    .btn:hover { background: var(--navy-deep); }
++    .link {
++      display: inline-flex;
++      align-items: center;
++      min-height: 44px;
++      color: var(--navy);
++      font-weight: 600;
++      text-decoration: underline;
++      text-underline-offset: 3px;
++    }
++    .link:hover { color: var(--green); }
++    .btn:focus-visible, .link:focus-visible { outline: 3px solid #1e90ff; outline-offset: 3px; border-radius: 6px; }
++    @media (max-width: 480px) {
++      .actions { flex-direction: column; align-items: stretch; }
++      .btn { width: 100%; }
++      .link { justify-content: center; }
++    }
++  </style>
++</head>
++<body>
++  <main>
++    <p class="brand">Association @Rrobe</p>
++    <h1>${title}</h1>
++    <p class="lead">${lead}</p>
++    ${note ? `<p class="note">${note}</p>` : ""}
++    <div class="actions">${actions ?? `<a class="btn" href="/">Retour au site</a>`}</div>
++  </main>
++</body>
++</html>`;
++}
++
++const PAGES = {
++  // Le formulaire n'a pas d'attribut action : il se soumet sur l'URL
++  // courante, jeton compris. Rien à reconstruire, rien à échapper.
++  confirm: (email) => ({
++    title: "Se désabonner de la newsletter",
++    lead: `L'adresse <strong>${escapeHtml(email)}</strong> ne recevra plus d'e-mail lors de la publication d'un article ou d'un événement.`,
++    actions: `<form method="post"><button class="btn" type="submit">Confirmer la désinscription</button></form>
++      <a class="link" href="/">Rester inscrit</a>`,
++  }),
++  done: {
++    title: "Vous êtes désinscrit",
++    lead: "Votre adresse a été retirée de la newsletter. Vous ne recevrez plus nos e-mails.",
++    note: "Changé d'avis&nbsp;? Réinscrivez-vous à tout moment depuis le bas de n'importe quelle page du site.",
++  },
++  // Jeton inconnu : lien déjà utilisé, ou copié de travers. Dans les
++  // deux cas l'adresse n'est pas (ou plus) inscrite — c'est ce que la
++  // personne veut savoir. On ne précise pas lequel des deux, cela
++  // renseignerait quelqu'un qui teste des jetons au hasard.
++  unknown: {
++    title: "Aucune inscription trouvée",
++    lead: "Ce lien ne correspond à aucune inscription en cours. Si vous l'avez déjà utilisé, votre désinscription est bien effective.",
++    note: "Vous recevez encore nos e-mails&nbsp;? Utilisez le lien présent en bas du plus récent.",
++  },
++  error: {
++    title: "La désinscription n'a pas abouti",
++    lead: "Le serveur n'a pas pu traiter votre demande. Réessayez en rouvrant le lien depuis l'e-mail dans quelques minutes.",
++    note: "Si le problème persiste, écrivez-nous via la page Contact du site.",
++  },
++};
++
++/**
++ * Lit le jeton de l'URL. Vercel range le segment [token] dans
++ * req.query.token ; le serveur local fait de même, et le repli sur le
++ * dernier segment couvre tout autre hébergeur.
++ *
++ * crypto.randomUUID() produit des minuscules : on normalise, au cas où
++ * un client mail aurait altéré la casse du lien.
++ */
++function readToken(req) {
++  const token = (getQuery(req, "token") ?? getSlug(req))?.toLowerCase();
++  return token && TOKEN_PATTERN.test(token) ? token : null;
++}
++
++/**
++ * Les gestionnaires attrapent leurs propres erreurs : celui de route()
++ * répondrait en JSON, illisible pour qui arrive de sa boîte mail.
++ */
++function withHtmlErrors(handler) {
++  return async (req, res) => {
++    try {
++      return await handler(req, res);
++    } catch (error) {
++      console.error("[newsletter] désinscription impossible :", error);
++      return sendHtml(res, 500, page(PAGES.error));
++    }
++  };
++}
++
++/** GET : lecture seule. Affiche la demande de confirmation. */
++async function showConfirmation(req, res) {
++  const token = readToken(req);
++  if (!token) return sendHtml(res, 404, page(PAGES.unknown));
++
++  const subscriber = await prisma.subscriber.findUnique({
++    where: { unsubscribeToken: token },
++    select: { email: true },
++  });
++  if (!subscriber) return sendHtml(res, 404, page(PAGES.unknown));
++
++  return sendHtml(res, 200, page(PAGES.confirm(subscriber.email)));
++}
++
++/** POST : supprime l'abonné. Le corps de la requête est ignoré. */
++async function unsubscribe(req, res) {
++  const token = readToken(req);
++  if (!token) return sendHtml(res, 404, page(PAGES.unknown));
++
++  // deleteMany plutôt que delete : ne lève pas d'erreur si le jeton
++  // n'existe plus (double envoi, page rechargée).
++  const { count } = await prisma.subscriber.deleteMany({
++    where: { unsubscribeToken: token },
++  });
++
++  return count > 0
++    ? sendHtml(res, 200, page(PAGES.done))
++    : sendHtml(res, 404, page(PAGES.unknown));
++}
++
++export default (req, res) =>
++  route(req, res, {
++    GET: withHtmlErrors(showConfirmation),
++    POST: withHtmlErrors(unsubscribe),
++  });
+diff --git a/arrobe-site/server/index.js b/arrobe-site/server/index.js
+index e2027b9..187b63e 100644
+--- a/arrobe-site/server/index.js
++++ b/arrobe-site/server/index.js
+@@ -20,6 +20,8 @@ import event from "../api/events/[slug].js";
+ import register from "../api/events/[slug]/register.js";
+ import registrations from "../api/events/[slug]/registrations.js";
+ import upload from "../api/upload.js";
++import subscribe from "../api/newsletter/subscribe.js";
++import unsubscribe from "../api/newsletter/unsubscribe/[token].js";
+ 
+ const PORT = Number(process.env.API_PORT ?? 3001);
+ 
+@@ -40,7 +42,9 @@ const ROUTES = [
+   { pattern: ["api", "events", ":slug"], handler: event },
+   { pattern: ["api", "events", ":slug", "register"], handler: register },
+   { pattern: ["api", "events", ":slug", "registrations"], handler: registrations },
+-    { pattern: ["api", "upload"], handler: upload },
++  { pattern: ["api", "upload"], handler: upload },
++  { pattern: ["api", "newsletter", "subscribe"], handler: subscribe },
++  { pattern: ["api", "newsletter", "unsubscribe", ":token"], handler: unsubscribe },
+ ];
+ 
+ function match(segments) {
+diff --git a/arrobe-site/src/components/Modal.jsx b/arrobe-site/src/components/Modal.jsx
+new file mode 100644
+index 0000000..6eb4d59
+--- /dev/null
++++ b/arrobe-site/src/components/Modal.jsx
+@@ -0,0 +1,75 @@
++import { useEffect, useId, useRef } from "react";
++import { createPortal } from "react-dom";
++
++/**
++ * Fenêtre modale du site.
++ * ===================================================================
++ * Construite sur l'élément natif <dialog> ouvert avec showModal(). Le
++ * navigateur fournit alors gratuitement ce qu'il faudrait sinon coder
++ * et tester à la main : le focus enfermé dans la fenêtre, la touche
++ * Échap, l'arrière-plan rendu inerte pour les lecteurs d'écran, et le
++ * retour du focus sur le bouton d'origine à la fermeture.
++ *
++ * Rendue dans <body> via un portail : placée dans une section, elle en
++ * hériterait les styles (les h2 et p de .newsletter, par exemple).
++ *
++ *   <Modal open={open} onClose={() => setOpen(false)} title="…">
++ *     <p>Contenu</p>
++ *   </Modal>
++ * ===================================================================
++ */
++export default function Modal({ open, onClose, title, children, closeLabel = "Fermer" }) {
++  const dialogRef = useRef(null);
++  const pressStartedOnBackdrop = useRef(false);
++  const titleId = useId();
++
++  // L'état React pilote le <dialog>, jamais l'inverse.
++  useEffect(() => {
++    const dialog = dialogRef.current;
++    if (!dialog) return;
++    if (open && !dialog.open) dialog.showModal();
++    if (!open && dialog.open) dialog.close();
++  }, [open]);
++
++  // Un clic sur le voile referme la fenêtre. Le clic arrive alors sur
++  // le <dialog> lui-même, le contenu étant dans un enfant. On vérifie
++  // aussi où le clic a commencé : sélectionner du texte dans la fenêtre
++  // et relâcher sur le voile ne doit pas la fermer.
++  const handlePointerDown = (event) => {
++    pressStartedOnBackdrop.current = event.target === dialogRef.current;
++  };
++  const handleClick = (event) => {
++    if (pressStartedOnBackdrop.current && event.target === dialogRef.current) {
++      onClose();
++    }
++  };
++
++  return createPortal(
++    <dialog
++      ref={dialogRef}
++      className="modal"
++      aria-labelledby={titleId}
++      // Échap déclenche « close » : on resynchronise l'état React.
++      onClose={onClose}
++      onPointerDown={handlePointerDown}
++      onClick={handleClick}
++    >
++      {open && (
++        <div className="modal__body">
++          <h2 className="modal__title" id={titleId}>
++            {title}
++          </h2>
++          <div className="modal__content">{children}</div>
++          <div className="modal__actions">
++            {/* autoFocus : showModal() place le focus ici, l'action
++                attendue, plutôt que sur le premier lien du contenu. */}
++            <button type="button" className="btn modal__close" onClick={onClose} autoFocus>
++              {closeLabel}
++            </button>
++          </div>
++        </div>
++      )}
++    </dialog>,
++    document.body
++  );
++}
+diff --git a/arrobe-site/src/components/Newsletter.jsx b/arrobe-site/src/components/Newsletter.jsx
+index 9739d1e..c49d2ec 100644
+--- a/arrobe-site/src/components/Newsletter.jsx
++++ b/arrobe-site/src/components/Newsletter.jsx
+@@ -1,19 +1,71 @@
+ import { useState } from "react";
+ import useReveal from "../hooks/useReveal";
++import { api } from "../lib/api";
++import Modal from "./Modal";
+ 
++/** Même règle, volontairement permissive, que côté API. */
++const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
++
++const INVALID_EMAIL =
++  "Cette adresse e-mail n'est pas valide. Vérifiez qu'elle contient un @ et un domaine, par exemple nom@exemple.fr.";
++
++/**
++ * Bloc d'inscription à la newsletter, affiché en bas des pages.
++ * ===================================================================
++ * Deux issues « réussies » s'affichent dans une fenêtre modale :
++ *   - inscription enregistrée ;
++ *   - adresse déjà inscrite — ce n'est pas une erreur, la personne
++ *     reçoit déjà ce qu'elle demande.
++ * Seules une adresse invalide ou une panne restent sous le champ,
++ * là où l'on corrige sa saisie.
++ * ===================================================================
++ */
+ export default function Newsletter() {
+   const [email, setEmail] = useState("");
+-  const [sent, setSent] = useState(false);
++  // Champ piège à robots, jamais visible ni rempli par un humain.
++  const [website, setWebsite] = useState("");
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState("");
++  // { status: "subscribed" | "already-subscribed", email } ou null
++  const [result, setResult] = useState(null);
+   const [ref, shown] = useReveal({ threshold: 0.25 });
+ 
+-  const handleSubmit = (e) => {
++  const handleSubmit = async (e) => {
+     e.preventDefault();
+-    if (!email.trim()) return;
+-    // TODO : branche ici ton service (Brevo, Mailchimp, ton API…)
+-    setSent(true);
+-    setEmail("");
++    if (busy) return;
++
++    const value = email.trim();
++    if (!value) {
++      setError("Saisissez votre adresse e-mail pour vous inscrire.");
++      return;
++    }
++    if (!EMAIL_PATTERN.test(value)) {
++      setError(INVALID_EMAIL);
++      return;
++    }
++
++    setError("");
++    setBusy(true);
++
++    try {
++      const data = await api.subscribeNewsletter(value, website);
++      setResult({ status: data.status, email: data.email || value });
++      setEmail("");
++    } catch (err) {
++      setError(
++        err.status === 422
++          ? INVALID_EMAIL
++          : err.status === 0
++            ? "Le serveur est injoignable. Vérifiez votre connexion puis réessayez."
++            : "L'inscription n'a pas pu être enregistrée. Réessayez dans quelques instants."
++      );
++    } finally {
++      setBusy(false);
++    }
+   };
+ 
++  const already = result?.status === "already-subscribed";
++
+   return (
+     <section className="newsletter" id="newsletter">
+       <div className="container">
+@@ -34,7 +86,7 @@ export default function Newsletter() {
+           </div>
+ 
+           <div className={`reveal ${shown ? "is-visible" : ""}`} style={{ "--delay": "200ms" }}>
+-            <form className="newsletter__form" onSubmit={handleSubmit}>
++            <form className="newsletter__form" onSubmit={handleSubmit} noValidate>
+               <label
+                 htmlFor="newsletter-email"
+                 style={{ position: "absolute", left: "-9999px" }}
+@@ -44,19 +96,52 @@ export default function Newsletter() {
+               <input
+                 id="newsletter-email"
+                 type="email"
+-                required
++                autoComplete="email"
++                inputMode="email"
+                 placeholder="Votre adresse e-mail..."
+                 value={email}
+-                onChange={(e) => setEmail(e.target.value)}
++                onChange={(e) => {
++                  setEmail(e.target.value);
++                  if (error) setError("");
++                }}
++                // readOnly et non disabled : un champ désactivé perd le
++                // focus, et la modale ne saurait plus où le rendre.
++                readOnly={busy}
++                aria-invalid={error ? "true" : undefined}
++                aria-describedby={error ? "newsletter-error" : undefined}
+               />
+-              <button className="btn newsletter__submit" type="submit">
+-                S'inscrire
++
++              {/* Piège à robots. Hors écran, hors tabulation, ignoré
++                  des lecteurs d'écran et de l'autoremplissage. */}
++              <div className="newsletter__trap" aria-hidden="true">
++                <label htmlFor="newsletter-website">Ne pas remplir</label>
++                <input
++                  id="newsletter-website"
++                  type="text"
++                  name="website"
++                  tabIndex={-1}
++                  autoComplete="off"
++                  value={website}
++                  onChange={(e) => setWebsite(e.target.value)}
++                />
++              </div>
++
++              {/* aria-disabled plutôt que disabled, pour la même raison :
++                  le bouton garde le focus pendant l'envoi, et le focus
++                  y revient à la fermeture de la modale. Le double envoi
++                  est bloqué par le test `busy` de handleSubmit. */}
++              <button
++                className="btn newsletter__submit"
++                type="submit"
++                aria-disabled={busy ? "true" : undefined}
++              >
++                {busy ? "Inscription…" : "S'inscrire"}
+               </button>
+             </form>
+ 
+-            {sent && (
+-              <p className="newsletter__done">
+-                Inscription enregistrée. À bientôt dans votre boîte mail.
++            {error && (
++              <p className="newsletter__error" id="newsletter-error" role="alert">
++                {error}
+               </p>
+             )}
+ 
+@@ -67,6 +152,29 @@ export default function Newsletter() {
+           </div>
+         </div>
+       </div>
++
++      <Modal
++        open={result !== null}
++        onClose={() => setResult(null)}
++        title={already ? "Adresse déjà inscrite" : "Inscription confirmée"}
++      >
++        {already ? (
++          <p>
++            <strong>{result?.email}</strong> reçoit déjà nos nouveaux articles
++            et événements. Vous n'avez rien d'autre à faire.
++          </p>
++        ) : (
++          <>
++            <p>
++              Vous recevrez un e-mail à <strong>{result?.email}</strong> dès
++              qu'un nouvel article ou événement est publié.
++            </p>
++            <p className="modal__note">
++              Chaque e-mail contient un lien pour vous désinscrire à tout moment.
++            </p>
++          </>
++        )}
++      </Modal>
+     </section>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/arrobe-site/src/lib/api.js b/arrobe-site/src/lib/api.js
+index f0c5691..0c1d7e8 100644
+--- a/arrobe-site/src/lib/api.js
++++ b/arrobe-site/src/lib/api.js
+@@ -200,6 +200,21 @@ export const api = {
+     });
+   },
+ 
++  /**
++   * Inscription à la newsletter. Résout dans les deux cas « réussis » :
++   * `status` vaut "subscribed" ou "already-subscribed". Seule une
++   * adresse invalide ou une panne lève une ApiError.
++   *
++   * `website` est le champ piège à robots : toujours vide pour un
++   * humain.
++   */
++  async subscribeNewsletter(email, website = "") {
++    return request("/api/newsletter/subscribe", {
++      method: "POST",
++      body: { email, website },
++    });
++  },
++
+   async listRegistrations(slug) {
+     return request(`/api/events/${encodeURIComponent(slug)}/registrations`, {
+       auth: true,
+diff --git a/arrobe-site/src/styles/global.css b/arrobe-site/src/styles/global.css
+index 351bedf..4cf7bd1 100644
+--- a/arrobe-site/src/styles/global.css
++++ b/arrobe-site/src/styles/global.css
+@@ -637,10 +637,129 @@ input:focus-visible {
+   margin: 14px 0 0;
+ }
+ 
+-.newsletter__done {
+-  margin: 16px 0 0;
++.newsletter__submit[aria-disabled="true"] {
++  opacity: 0.7;
++  cursor: progress;
++  transform: none;
++  box-shadow: none;
++}
++
++/* Sur le vert du bandeau, un texte rouge serait illisible : le message
++   d'erreur prend un fond marine, contrasté quelle que soit sa longueur. */
++.newsletter .newsletter__error {
++  max-width: none;
++  margin: 12px 0 0;
++  padding: 10px 16px;
++  border-radius: 12px;
++  background: var(--navy-deep);
++  color: var(--white);
++  font-size: 0.92rem;
++  font-weight: 500;
++  line-height: 1.5;
++  animation: fadeUp 0.35s var(--ease) both;
++}
++
++/* Piège à robots : présent dans le DOM, invisible pour un humain. */
++.newsletter__trap {
++  position: absolute;
++  left: -9999px;
++  width: 1px;
++  height: 1px;
++  overflow: hidden;
++}
++
++/* ==================================================================
++   9 bis. Fenêtre modale
++   ------------------------------------------------------------------
++   Élément <dialog> natif (voir components/Modal.jsx). Même carte que
++   le reste du site : coins de 22px, titre marqué de la barre verte.
++   ================================================================== */
++.modal {
++  width: min(100% - 32px, 480px);
++  max-width: none;
++  max-height: calc(100dvh - 32px);
++  padding: 0;
++  border: 0;
++  border-radius: 22px;
++  background: var(--white);
++  color: var(--ink);
++  box-shadow: 0 30px 80px rgba(22, 38, 77, 0.35);
++  overflow: auto;
++}
++.modal[open] {
++  animation: modalIn 0.32s var(--ease) both;
++}
++.modal::backdrop {
++  background: rgba(22, 38, 77, 0.55);
++  backdrop-filter: blur(3px);
++}
++.modal[open]::backdrop {
++  animation: modalFade 0.32s var(--ease) both;
++}
++
++/* La page derrière ne défile plus tant que la fenêtre est ouverte. */
++html:has(body > .modal[open]) {
++  overflow: hidden;
++}
++
++.modal__body {
++  padding: clamp(28px, 5vw, 40px);
++}
++
++.modal__title {
++  position: relative;
++  margin: 0 0 12px;
++  padding-left: 18px;
++  font-size: clamp(1.3rem, 3.6vw, 1.6rem);
++  font-weight: 700;
++  line-height: 1.3;
++}
++.modal__title::before {
++  content: "";
++  position: absolute;
++  left: 0;
++  top: 5px;
++  bottom: 7px;
++  width: 7px;
++  background: var(--green);
++}
++
++.modal__content p {
++  margin: 0;
++}
++.modal__content strong {
+   font-weight: 600;
+-  animation: fadeUp 0.5s var(--ease) both;
++  overflow-wrap: anywhere; /* les longues adresses passent à la ligne */
++}
++.modal__content .modal__note {
++  margin-top: 10px;
++  font-size: 0.92rem;
++  color: var(--muted);
++}
++
++.modal__actions {
++  display: flex;
++  justify-content: flex-end;
++  margin-top: 28px;
++}
++
++@keyframes modalIn {
++  from {
++    opacity: 0;
++    transform: translateY(16px) scale(0.98);
++  }
++  to {
++    opacity: 1;
++    transform: none;
++  }
++}
++@keyframes modalFade {
++  from {
++    opacity: 0;
++  }
++  to {
++    opacity: 1;
++  }
+ }
+ 
+ /* ==================================================================
+@@ -3197,6 +3316,11 @@ input:focus-visible {
+     font-size: 0.88rem; /* 12,5px -> 14px : lisible */
+   }
+ 
++  /* --- Fenêtre modale : bouton pleine largeur, plus facile au pouce -- */
++  .modal__close {
++    width: 100%;
++  }
++
+   /* --- Contact -------------------------------------------------------- */
+   .contact__form-card {
+     padding: 26px 20px 30px;

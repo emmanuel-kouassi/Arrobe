@@ -179,6 +179,27 @@ export function validateEvent(body, { partial = false } = {}) {
   return errors.length ? { valid: false, errors } : { valid: true, value };
 }
 
+/**
+ * Lit et normalise une adresse e-mail.
+ *
+ * Volontairement permissif : on écarte les saisies manifestement
+ * fausses sans prétendre valider un e-mail par expression régulière,
+ * exercice perdu d'avance. La vraie vérification serait un envoi.
+ *
+ * La mise en minuscules n'est pas cosmétique : la contrainte d'unicité
+ * de PostgreSQL est sensible à la casse. Sans elle, « Jean@x.fr » et
+ * « jean@x.fr » seraient deux abonnés distincts et recevraient chaque
+ * newsletter en double.
+ */
+function readEmail(errors, body) {
+  const email = str(body.email);
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 200) {
+    errors.push("email doit être une adresse valide.");
+    return undefined;
+  }
+  return email.toLowerCase();
+}
+
 /** Valide une inscription à un événement. Route publique : soyons stricts. */
 export function validateRegistration(body) {
   const errors = [];
@@ -187,15 +208,8 @@ export function validateRegistration(body) {
   const name = requireText(errors, body, "name", { max: 120, min: 2 });
   if (name) value.name = name;
 
-  const email = str(body.email);
-  // Volontairement permissif : on écarte les saisies manifestement
-  // fausses sans prétendre valider un e-mail par expression régulière,
-  // exercice perdu d'avance. La vraie vérification serait un envoi.
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 200) {
-    errors.push("email doit être une adresse valide.");
-  } else {
-    value.email = email.toLowerCase();
-  }
+  const email = readEmail(errors, body);
+  if (email) value.email = email;
 
   if (body.phone !== undefined && body.phone !== null && body.phone !== "") {
     const phone = str(body.phone);
@@ -216,4 +230,11 @@ export function validateRegistration(body) {
   }
 
   return errors.length ? { valid: false, errors } : { valid: true, value };
+}
+
+/** Valide une inscription à la newsletter : l'adresse, rien d'autre. */
+export function validateSubscriber(body) {
+  const errors = [];
+  const email = readEmail(errors, body);
+  return errors.length ? { valid: false, errors } : { valid: true, value: { email } };
 }
