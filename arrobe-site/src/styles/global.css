@@ -659,8 +659,10 @@ input:focus-visible {
   animation: fadeUp 0.35s var(--ease) both;
 }
 
-/* Piège à robots : présent dans le DOM, invisible pour un humain. */
-.newsletter__trap {
+/* Piège à robots : présent dans le DOM, invisible pour un humain.
+   Utilisé par la newsletter et le formulaire d'inscription. */
+.newsletter__trap,
+.form__trap {
   position: absolute;
   left: -9999px;
   width: 1px;

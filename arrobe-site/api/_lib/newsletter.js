@@ -23,33 +23,21 @@
  * et la fonction renvoie un bilan :
  *   { total, sent, failed, notAttempted, skipped, error }
  *
- * Variables d'environnement :
- *   BREVO_API_KEY       clé API Brevo (SMTP & API > Clés API)
- *   BREVO_SENDER_EMAIL  adresse expéditrice vérifiée dans Brevo
- *   SITE_URL            adresse publique du site, ex. https://arrobe.fr
- *                       (sur Vercel, repli automatique sur le domaine
- *                       de production si elle est absente)
+ * Envoi technique (clé API, tentatives, erreurs) : voir brevo.js.
+ * Gabarit visuel partagé : voir email-layout.js.
  * ===================================================================
  */
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { waitUntil } from "@vercel/functions";
-
 import { prisma } from "./prisma.js";
 import { escapeHtml } from "./html.js";
-
-const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
-const SENDER_NAME = "Association @Rrobe";
+import { readEmailConfig, sendEmail, oneLine, absoluteUrl, maskEmail } from "./brevo.js";
+import { renderEmailLayout, emailTitle, emailButton, COLORS } from "./email-layout.js";
+import { runInBackground } from "./background.js";
 
 /** Envois simultanés. Assez pour aller vite, trop peu pour saturer. */
 const CONCURRENCY = 5;
-/** Délai maximal d'un appel Brevo avant abandon de la tentative. */
-const REQUEST_TIMEOUT_MS = 10_000;
-/** Tentatives par abonné en cas d'erreur passagère (429, 5xx, réseau). */
-const MAX_ATTEMPTS = 3;
-/** Plafond d'attente entre deux tentatives. */
-const MAX_RETRY_WAIT_MS = 10_000;
 
 const TYPES = {
   article: { subject: "Nouvel article", cta: "Lire l'article" },
@@ -57,72 +45,7 @@ const TYPES = {
 };
 
 /* ------------------------------------------------------------------
-   Configuration et données d'entrée
-   ------------------------------------------------------------------ */
-
-function readConfig() {
-  const apiKey = process.env.BREVO_API_KEY?.trim();
-  const senderEmail = process.env.BREVO_SENDER_EMAIL?.trim();
-
-  // VERCEL_PROJECT_PRODUCTION_URL est fournie par Vercel (sans le
-  // protocole). On ne se rabat pas sur VERCEL_URL : c'est l'adresse du
-  // déploiement en cours, parfois protégée, et les liens des e-mails
-  // doivent rester valides après les déploiements suivants.
-  const rawSite =
-    process.env.SITE_URL?.trim() ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "");
-
-  let siteUrl = null;
-  try {
-    const parsed = new URL(rawSite);
-    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
-      siteUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
-    }
-  } catch {
-    /* reste null */
-  }
-
-  const missing = [];
-  if (!apiKey) missing.push("BREVO_API_KEY");
-  if (!senderEmail) missing.push("BREVO_SENDER_EMAIL");
-  if (!siteUrl) missing.push("SITE_URL (adresse absolue, ex. https://arrobe.fr)");
-
-  return { apiKey, senderEmail, siteUrl, missing };
-}
-
-/** Ramène un texte sur une ligne : un saut de ligne dans l'objet d'un mail le casse. */
-function oneLine(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
-/**
- * Rend absolue l'URL de la publication. Accepte « /#/blog/mon-article »
- * ou « #/blog/mon-article » aussi bien qu'une URL complète : un lien
- * relatif ne mène nulle part depuis une boîte mail.
- */
-function absoluteUrl(url, siteUrl) {
-  try {
-    const parsed = new URL(String(url ?? ""), `${siteUrl}/`);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : null;
-  } catch {
-    return null;
-  }
-}
-
-/** « jean.dupont@exemple.fr » -> « j•••@exemple.fr » : les journaux n'ont pas besoin de plus. */
-function maskEmail(email) {
-  const [local = "", domain = ""] = String(email).split("@");
-  return `${local.slice(0, 1)}•••@${domain}`;
-}
-
-/* ------------------------------------------------------------------
    Contenu de l'e-mail
-   ------------------------------------------------------------------
-   HTML en tableaux et styles en ligne : c'est ce que les messageries
-   (Outlook en tête) affichent correctement. Pas d'image : rien à
-   bloquer, rien à héberger.
    ------------------------------------------------------------------ */
 
 /**
@@ -135,66 +58,19 @@ export function renderNewsletterEmail({ type, title, excerpt, url, unsubscribeUr
   const cleanExcerpt = oneLine(excerpt);
   const subject = `${kind.subject} : ${cleanTitle}`;
 
-  const t = escapeHtml(cleanTitle);
   const e = escapeHtml(cleanExcerpt);
   const href = escapeHtml(url);
-  const unsubscribeHref = escapeHtml(unsubscribeUrl);
 
-  const htmlContent = `<!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="x-apple-disable-message-reformatting">
-<title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f7f9fc;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${e}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f9fc;">
-  <tr>
-    <td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
-        <tr>
-          <td style="padding:0 4px 16px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#5a6885;">
-            Association @Rrobe
-          </td>
-        </tr>
-        <tr>
-          <td style="background-color:#ffffff;border-radius:16px;padding:36px 32px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16264d;">
-            <p style="margin:0 0 10px;font-size:14px;color:#5a6885;">${kind.subject}</p>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-              <tr>
-                <td style="border-left:6px solid #14a26a;padding:2px 0 2px 14px;font-size:24px;line-height:1.3;font-weight:700;color:#16264d;">
-                  ${t}
-                </td>
-              </tr>
-            </table>
-            ${e ? `<p style="margin:18px 0 0;font-size:16px;line-height:1.65;color:#16264d;">${e}</p>` : ""}
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;">
-              <tr>
-                <td bgcolor="#14a26a" style="border-radius:8px;">
-                  <a href="${href}" style="display:inline-block;padding:14px 26px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">${kind.cta}</a>
-                </td>
-              </tr>
-            </table>
-            <p style="margin:24px 0 0;font-size:13px;line-height:1.5;color:#5a6885;">
-              Le bouton ne s'ouvre pas&nbsp;? Copiez ce lien dans votre navigateur&nbsp;:<br>
-              <a href="${href}" style="color:#1e2e5e;word-break:break-all;">${href}</a>
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:20px 4px 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#5a6885;">
-            Vous recevez cet e-mail car votre adresse est inscrite à la newsletter de l'association @Rrobe.<br>
-            <a href="${unsubscribeHref}" style="color:#1e2e5e;">Se désabonner</a>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-</body>
-</html>`;
+  const htmlContent = renderEmailLayout({
+    title: escapeHtml(subject),
+    preheader: e,
+    content: `<p style="margin:0 0 10px;font-size:14px;color:${COLORS.muted};">${kind.subject}</p>
+            ${emailTitle(escapeHtml(cleanTitle))}
+            ${e ? `<p style="margin:18px 0 0;font-size:16px;line-height:1.65;color:${COLORS.ink};">${e}</p>` : ""}
+            ${emailButton(href, kind.cta)}`,
+    footer: `Vous recevez cet e-mail car votre adresse est inscrite à la newsletter de l'association @Rrobe.<br>
+            <a href="${escapeHtml(unsubscribeUrl)}" style="color:${COLORS.navy};">Se désabonner</a>`,
+  });
 
   // Version texte : lue par certaines messageries et filtres anti-spam,
   // qui se méfient des e-mails uniquement HTML.
@@ -216,86 +92,6 @@ export function renderNewsletterEmail({ type, title, excerpt, url, unsubscribeUr
 }
 
 /* ------------------------------------------------------------------
-   Appel à Brevo
-   ------------------------------------------------------------------ */
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Erreurs qui valent pour tous les envois suivants : inutile de
- * continuer, chaque appel échouerait pareil et remplirait les journaux.
- */
-function fatalReason(status, code) {
-  if (status === 401 || status === 403 || code === "unauthorized" || code === "permission_denied") {
-    return "clé API refusée par Brevo (BREVO_API_KEY absente, révoquée ou erronée)";
-  }
-  if (status === 402 || code === "not_enough_credits" || code === "Insufficient credits") {
-    return "quota Brevo épuisé (300 e-mails par jour sur l'offre gratuite)";
-  }
-  if (code === "account_under_validation") {
-    return "compte Brevo en cours de validation : les envois sont suspendus";
-  }
-  return null;
-}
-
-/** Délai avant nouvelle tentative : consigne de Brevo si fournie, sinon attente croissante. */
-function retryDelay(response, attempt) {
-  const reset = Number(response?.headers?.get("x-sib-ratelimit-reset"));
-  const fromHeader = Number.isFinite(reset) && reset > 0 ? reset * 1000 : 0;
-  return Math.min(fromHeader || 1000 * 2 ** (attempt - 1), MAX_RETRY_WAIT_MS);
-}
-
-/**
- * Envoie un e-mail. Renvoie { ok: true } ou { ok: false, message, fatal? }.
- * Ne lève jamais.
- */
-async function sendOne(config, payload, idempotencyKey) {
-  let lastError = "échec inconnu";
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    let response;
-    try {
-      response = await fetch(BREVO_ENDPOINT, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          "api-key": config.apiKey,
-        },
-        // La même clé à chaque tentative : si Brevo a bien reçu un envoi
-        // dont la réponse s'est perdue (délai dépassé), la nouvelle
-        // tentative ne produit pas de doublon chez l'abonné.
-        body: JSON.stringify({ ...payload, headers: { "Idempotency-Key": idempotencyKey } }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-    } catch (error) {
-      // Réseau coupé, DNS, délai dépassé : passager, on retente.
-      lastError = error?.name === "TimeoutError" ? "délai dépassé" : `réseau : ${error?.message}`;
-      if (attempt < MAX_ATTEMPTS) await wait(retryDelay(null, attempt));
-      continue;
-    }
-
-    if (response.ok) return { ok: true };
-
-    const body = await response.json().catch(() => null);
-    const code = body?.code;
-    lastError = `HTTP ${response.status}${code ? ` ${code}` : ""}${body?.message ? ` — ${body.message}` : ""}`;
-
-    const fatal = fatalReason(response.status, code);
-    if (fatal) return { ok: false, message: lastError, fatal };
-
-    // 429 (trop de requêtes) et 5xx (panne Brevo) : passager, on retente.
-    // Tout autre 4xx (adresse invalide, contenu refusé) échouerait à
-    // l'identique : on n'insiste pas.
-    const transient = response.status === 429 || response.status >= 500;
-    if (!transient) return { ok: false, message: lastError };
-    if (attempt < MAX_ATTEMPTS) await wait(retryDelay(response, attempt));
-  }
-
-  return { ok: false, message: `${lastError} (après ${MAX_ATTEMPTS} tentatives)` };
-}
-
-/* ------------------------------------------------------------------
    Point d'entrée
    ------------------------------------------------------------------ */
 
@@ -311,7 +107,7 @@ export async function notifySubscribers({ type, title, excerpt, url } = {}) {
   const summary = { total: 0, sent: 0, failed: 0, notAttempted: 0, skipped: null, error: null };
 
   try {
-    const config = readConfig();
+    const config = readEmailConfig();
     if (config.missing.length > 0) {
       console.warn(
         `[newsletter] envoi ignoré, configuration incomplète : ${config.missing.join(", ")}.`
@@ -360,17 +156,20 @@ export async function notifySubscribers({ type, title, excerpt, url } = {}) {
           unsubscribeUrl: `${config.siteUrl}/api/newsletter/unsubscribe/${subscriber.unsubscribeToken}`,
         });
 
-        const result = await sendOne(
+        const result = await sendEmail(
           config,
           {
-            sender: { name: SENDER_NAME, email: config.senderEmail },
-            to: [{ email: subscriber.email }],
+            to: subscriber.email,
             subject,
             htmlContent,
             textContent,
             tags: ["newsletter", `newsletter-${type}`],
           },
-          createHash("sha256").update(`${batchId}:${subscriber.id}`).digest("hex")
+          {
+            idempotencyKey: createHash("sha256")
+              .update(`${batchId}:${subscriber.id}`)
+              .digest("hex"),
+          }
         );
 
         if (result.ok) {
@@ -424,39 +223,13 @@ export async function notifySubscribers({ type, title, excerpt, url } = {}) {
 
 /**
  * Annonce une publication aux abonnés SANS faire attendre la réponse
- * HTTP, et sans jamais pouvoir la faire échouer.
+ * HTTP, et sans jamais pouvoir la faire échouer (voir background.js).
  *
  *   announcePublication({ type: "article", title, excerpt, url });
  *   return sendJson(res, 200, { article });   // part immédiatement
- *
- * Sur Vercel, une fonction est gelée dès que sa réponse est envoyée :
- * un envoi lancé « en tâche de fond » serait coupé en route.
- * waitUntil() demande à Vercel de laisser vivre la fonction jusqu'à la
- * fin des envois — dans la limite de sa durée maximale d'exécution.
- * Hors Vercel (serveur local, o2switch), waitUntil() ne fait rien : le
- * processus Node reste en vie et l'envoi se termine normalement.
- *
- * Toute erreur est journalisée ici et jamais propagée : la publication
- * est déjà enregistrée en base quand on arrive à cet appel.
  */
 export function announcePublication(publication) {
-  let task;
-  try {
-    task = notifySubscribers(publication).catch((error) => {
-      console.error("[newsletter] échec de l'annonce :", error);
-    });
-  } catch (error) {
-    console.error("[newsletter] impossible de lancer l'annonce :", error);
-    return;
-  }
-
-  try {
-    waitUntil(task);
-  } catch (error) {
-    // L'envoi est déjà parti ; seul le maintien en vie de la fonction
-    // Vercel n'a pas pu être demandé.
-    console.error("[newsletter] waitUntil indisponible :", error);
-  }
+  runInBackground("newsletter", () => notifySubscribers(publication));
 }
 
 /**

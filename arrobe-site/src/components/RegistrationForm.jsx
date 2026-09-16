@@ -17,6 +17,8 @@ export default function RegistrationForm({ slug, title }) {
     email: "",
     phone: "",
     numberOfPeople: 1,
+    // Piège à robots : champ masqué, toujours vide pour un humain.
+    website: "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -43,6 +45,7 @@ export default function RegistrationForm({ slug, title }) {
         email: form.email.trim(),
         phone: form.phone.trim() || null,
         numberOfPeople: Number(form.numberOfPeople) || 1,
+        website: form.website,
       });
       setDone(true);
     } catch (err) {
@@ -63,9 +66,10 @@ export default function RegistrationForm({ slug, title }) {
             est bien prise en compte. Nous vous attendons&nbsp;!
           </p>
           <p className="register__note">
-            Vous n'avez pas reçu de confirmation par e-mail&nbsp;: l'envoi
-            automatique n'est pas encore en place. En cas de doute,
-            contactez-nous.
+            Un e-mail de confirmation vous est envoyé à{" "}
+            <strong>{form.email.trim()}</strong>. Vous ne le voyez pas d'ici
+            quelques minutes&nbsp;? Pensez à regarder dans vos courriers
+            indésirables ou l'onglet «&nbsp;Autres&nbsp;».
           </p>
         </div>
       </section>
@@ -135,6 +139,21 @@ export default function RegistrationForm({ slug, title }) {
                 disabled={busy}
               />
             </div>
+          </div>
+
+          {/* Piège à robots. Hors écran, hors tabulation, ignoré des
+              lecteurs d'écran et de l'autoremplissage. */}
+          <div className="form__trap" aria-hidden="true">
+            <label htmlFor="reg-website">Ne pas remplir</label>
+            <input
+              id="reg-website"
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              value={form.website}
+              onChange={update("website")}
+            />
           </div>
 
           {error && (
