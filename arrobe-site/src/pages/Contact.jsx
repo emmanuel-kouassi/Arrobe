@@ -18,27 +18,27 @@ const INFOS = [
   {
     id: "adresse",
     label: "Notre local",
-    lines: ["12 rue Lorem Ipsum", "77860 Saint-Germain-sur-Morin"],
+    lines: ["18 rue de paris", "77860 Saint-Germain-sur-Morin"],
     icon: "pin",
   },
   {
     id: "mail",
     label: "Écrivez-nous",
-    lines: ["association.arrobe@sfr.fr"],
-    href: "mailto:association.arrobe@sfr.fr",
+    lines: ["ass.arrobe@laposte.net"],
+    href: "mailto:ass.arrobe@laposte.net",
     icon: "mail",
   },
   {
     id: "tel",
     label: "Appelez-nous",
-    lines: ["01 23 45 67 89"],
-    href: "tel:+33123456789",
+    lines: ["**********"],
+    href: "tel:+**********",
     icon: "phone",
   },
   {
     id: "horaires",
     label: "Nos permanences",
-    lines: ["Mardi et jeudi : 14h - 18h", "Samedi : 10h - 12h"],
+    lines: ["Tous les jeudi : 19H30 - 22h00", "Samedi : 10h - 12h","dans nos locaux"],
     icon: "clock",
   },
 ];

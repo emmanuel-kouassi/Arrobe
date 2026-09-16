@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useReveal from "../hooks/useReveal";
 import PostCard from "../components/PostCard";
-import { POSTS, CATEGORIES, SORT_OPTIONS, sortPosts } from "../data/posts";
+import { api } from "../lib/api";
+import { SORT_OPTIONS, sortPosts } from "../data/posts";
+import { ALL, buildFilters } from "../lib/categories";
 
 function FilterIcon() {
   return (
@@ -40,20 +42,52 @@ function ListIcon() {
 
 export default function Blog() {
   const [sort, setSort] = useState("recent");
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState(ALL);
   const [view, setView] = useState("grid");
+
+  const [posts, setPosts] = useState([]);
+  const [state, setState] = useState("loading");
+  const [error, setError] = useState("");
 
   const [headRef, headShown] = useReveal({ threshold: 0.1 });
   const [barRef, barShown] = useReveal({ threshold: 0.1 });
 
-  // Filtre + tri : tout se fait dans le navigateur pour l'instant.
+  // L'API ne renvoie que les articles publiés — sauf si un admin est
+  // connecté, auquel cas ses brouillons apparaissent aussi.
+  useEffect(() => {
+    let cancelled = false;
+
+    api
+      .listArticles()
+      .then((data) => {
+        if (cancelled) return;
+        setPosts(data);
+        setState("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message);
+        setState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Filtre et tri restent côté navigateur : la liste est courte, un
+  // aller-retour serveur à chaque clic n'apporterait rien.
   const visiblePosts = useMemo(() => {
     const filtered =
-      category === "all"
-        ? POSTS
-        : POSTS.filter((post) => post.category === category);
+      category === ALL
+        ? posts
+        : posts.filter((post) => post.category === category);
     return sortPosts(filtered, sort);
-  }, [category, sort]);
+  }, [posts, category, sort]);
+
+  // Les puces sont construites à partir des articles reçus : une
+  // catégorie ajoutée plus tard apparaît sans toucher au code.
+  const filters = useMemo(() => buildFilters(posts), [posts]);
 
   return (
     <main className="blog">
@@ -117,7 +151,7 @@ export default function Blog() {
           </div>
 
           <div className="blog__chips">
-            {CATEGORIES.map((cat) => (
+            {filters.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
@@ -130,9 +164,26 @@ export default function Blog() {
             ))}
           </div>
 
-          {visiblePosts.length === 0 ? (
-            <p className="blog__empty">
-              Aucun article dans cette catégorie pour le moment. Revenez bientôt.
+          {state === "loading" ? (
+            <p className="empty">Chargement des articles…</p>
+          ) : state === "error" ? (
+            <p className="empty">
+              <span className="empty__title">Chargement impossible</span>
+              {error}
+            </p>
+          ) : visiblePosts.length === 0 ? (
+            /* Deux situations très différentes : soit le blog est encore
+               vide, soit le filtre choisi ne renvoie rien. Le message le
+               dit, sinon on laisse croire à un bug. */
+            <p className="empty">
+              <span className="empty__title">
+                {posts.length === 0
+                  ? "Aucun article pour le moment"
+                  : "Aucun article dans cette catégorie"}
+              </span>
+              {posts.length === 0
+                ? "Les premiers articles de l'association seront publiés ici prochainement."
+                : "Essayez une autre catégorie pour retrouver nos publications."}
             </p>
           ) : (
             <div
