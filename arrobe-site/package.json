@@ -13,9 +13,10 @@
     "db:seed": "node --env-file-if-exists=.env prisma/seed.js",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && npm run db:compile",
     "dev:api": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.js",
-    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.js"
+    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.js",
+    "db:compile": "esbuild \"prisma/generated/client/**/*.ts\" --outdir=prisma/generated/client --outbase=prisma/generated/client --format=esm --platform=node --log-level=warning"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

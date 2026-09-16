@@ -1,4 +1,4 @@
-import { PrismaClient } from "../../prisma/generated/client/client.ts";
+import { PrismaClient } from "../../prisma/generated/client/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 if (!process.env.DATABASE_URL) {
