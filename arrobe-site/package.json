@@ -21,6 +21,7 @@
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@vercel/blob": "^2.8.0",
+    "@vercel/functions": "^3.9.8",
     "bcryptjs": "^3.0.3",
     "dompurify": "^3.4.15",
     "jose": "^6.2.12",

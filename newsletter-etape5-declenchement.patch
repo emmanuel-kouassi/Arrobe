@@ -1,0 +1,592 @@
+diff --git a/arrobe-site/api/_lib/newsletter.js b/arrobe-site/api/_lib/newsletter.js
+index e5073d6..5aa9131 100644
+--- a/arrobe-site/api/_lib/newsletter.js
++++ b/arrobe-site/api/_lib/newsletter.js
+@@ -34,6 +34,8 @@
+ 
+ import { createHash, randomUUID } from "node:crypto";
+ 
++import { waitUntil } from "@vercel/functions";
++
+ import { prisma } from "./prisma.js";
+ import { escapeHtml } from "./html.js";
+ 
+@@ -415,3 +417,68 @@ export async function notifySubscribers({ type, title, excerpt, url } = {}) {
+ 
+   return summary;
+ }
++
++/* ------------------------------------------------------------------
++   Déclenchement depuis une route de publication
++   ------------------------------------------------------------------ */
++
++/**
++ * Annonce une publication aux abonnés SANS faire attendre la réponse
++ * HTTP, et sans jamais pouvoir la faire échouer.
++ *
++ *   announcePublication({ type: "article", title, excerpt, url });
++ *   return sendJson(res, 200, { article });   // part immédiatement
++ *
++ * Sur Vercel, une fonction est gelée dès que sa réponse est envoyée :
++ * un envoi lancé « en tâche de fond » serait coupé en route.
++ * waitUntil() demande à Vercel de laisser vivre la fonction jusqu'à la
++ * fin des envois — dans la limite de sa durée maximale d'exécution.
++ * Hors Vercel (serveur local, o2switch), waitUntil() ne fait rien : le
++ * processus Node reste en vie et l'envoi se termine normalement.
++ *
++ * Toute erreur est journalisée ici et jamais propagée : la publication
++ * est déjà enregistrée en base quand on arrive à cet appel.
++ */
++export function announcePublication(publication) {
++  let task;
++  try {
++    task = notifySubscribers(publication).catch((error) => {
++      console.error("[newsletter] échec de l'annonce :", error);
++    });
++  } catch (error) {
++    console.error("[newsletter] impossible de lancer l'annonce :", error);
++    return;
++  }
++
++  try {
++    waitUntil(task);
++  } catch (error) {
++    // L'envoi est déjà parti ; seul le maintien en vie de la fonction
++    // Vercel n'a pas pu être demandé.
++    console.error("[newsletter] waitUntil indisponible :", error);
++  }
++}
++
++/**
++ * Annonce la première publication d'un événement.
++ *
++ * Un événement déjà passé n'est pas annoncé : publier une archive (la
++ * fête du village de l'an dernier, avec son compte rendu) enverrait
++ * sinon « Nouvel événement » pour une date révolue à tous les abonnés.
++ */
++export function announceEvent(event) {
++  if (!(event?.date instanceof Date) || event.date < new Date()) {
++    console.info(
++      `[newsletter] « ${event?.title} » est un événement passé : publié sans annonce aux abonnés.`
++    );
++    return;
++  }
++
++  announcePublication({
++    type: "event",
++    title: event.title,
++    excerpt: event.description,
++    // Relative : newsletter.js la complète avec SITE_URL.
++    url: `/#/evenement/${event.slug}`,
++  });
++}
+diff --git a/arrobe-site/api/articles/[slug].js b/arrobe-site/api/articles/[slug].js
+index 4126c0e..c688c4e 100644
+--- a/arrobe-site/api/articles/[slug].js
++++ b/arrobe-site/api/articles/[slug].js
+@@ -9,6 +9,7 @@ import { prisma } from "../_lib/prisma.js";
+ import { readAdmin, requireAdmin } from "../_lib/auth.js";
+ import { route, readJsonBody, sendJson, sendError, getSlug } from "../_lib/http.js";
+ import { validateArticle } from "../_lib/validate.js";
++import { announcePublication } from "../_lib/newsletter.js";
+ 
+ async function getArticle(req, res) {
+   const slug = getSlug(req);
+@@ -45,11 +46,27 @@ async function updateArticle(req, res) {
+   // déjà publié : on conserve la date d'origine, sinon un simple
+   // passage en brouillon puis retour le ferait remonter en tête de
+   // liste comme s'il était neuf.
+-  if (data.status === "PUBLISHED" && !existing.publishedAt) {
++  const firstPublication = data.status === "PUBLISHED" && !existing.publishedAt;
++  if (firstPublication) {
+     data.publishedAt = new Date();
+   }
+ 
+   const article = await prisma.article.update({ where: { slug }, data });
++
++  // Annonce aux abonnés, APRÈS l'écriture en base : si la mise à jour
++  // échoue, personne ne reçoit de mail pour un article resté brouillon.
++  // L'appel rend la main tout de suite et ne peut pas faire échouer la
++  // réponse (voir announcePublication).
++  if (firstPublication) {
++    announcePublication({
++      type: "article",
++      title: article.title,
++      excerpt: article.excerpt,
++      // Relative : newsletter.js la complète avec SITE_URL.
++      url: `/#/blog/${article.slug}`,
++    });
++  }
++
+   return sendJson(res, 200, { article });
+ }
+ 
+diff --git a/arrobe-site/api/articles/index.js b/arrobe-site/api/articles/index.js
+index ce55cf0..091da02 100644
+--- a/arrobe-site/api/articles/index.js
++++ b/arrobe-site/api/articles/index.js
+@@ -14,6 +14,7 @@ import { prisma } from "../_lib/prisma.js";
+ import { readAdmin, requireAdmin } from "../_lib/auth.js";
+ import { route, readJsonBody, sendJson, sendError, getQuery } from "../_lib/http.js";
+ import { validateArticle, slugify } from "../_lib/validate.js";
++import { announcePublication } from "../_lib/newsletter.js";
+ 
+ /** Champs renvoyés en liste : inutile de transporter tout le HTML. */
+ const LIST_FIELDS = {
+@@ -65,6 +66,17 @@ async function createArticle(req, res) {
+ 
+   const article = await prisma.article.create({ data });
+ 
++  // Créé directement avec le statut « Publié » : c'est aussi une
++  // première publication, à annoncer comme dans updateArticle.
++  if (article.status === "PUBLISHED") {
++    announcePublication({
++      type: "article",
++      title: article.title,
++      excerpt: article.excerpt,
++      url: `/#/blog/${article.slug}`,
++    });
++  }
++
+   res.setHeader("Location", `/api/articles/${article.slug}`);
+   return sendJson(res, 201, { article });
+ }
+diff --git a/arrobe-site/api/events/[slug].js b/arrobe-site/api/events/[slug].js
+index f4480cc..41d4f00 100644
+--- a/arrobe-site/api/events/[slug].js
++++ b/arrobe-site/api/events/[slug].js
+@@ -16,6 +16,7 @@ import {
+   getQuery,
+ } from "../_lib/http.js";
+ import { validateEvent } from "../_lib/validate.js";
++import { announceEvent } from "../_lib/newsletter.js";
+ 
+ async function getEvent(req, res) {
+   const slug = getSlug(req);
+@@ -50,7 +51,21 @@ async function updateEvent(req, res) {
+   const existing = await prisma.event.findUnique({ where: { slug } });
+   if (!existing) return sendError(res, 404, "Événement introuvable.");
+ 
+-  const event = await prisma.event.update({ where: { slug }, data: check.value });
++  const data = check.value;
++
++  // Première publication : on horodate, comme pour les articles. Une
++  // republication après passage en brouillon garde la date d'origine
++  // et n'est pas annoncée une seconde fois.
++  const firstPublication = data.status === "PUBLISHED" && !existing.publishedAt;
++  if (firstPublication) {
++    data.publishedAt = new Date();
++  }
++
++  const event = await prisma.event.update({ where: { slug }, data });
++
++  // Après l'écriture en base, sans attendre ni risquer la réponse.
++  if (firstPublication) announceEvent(event);
++
+   return sendJson(res, 200, { event });
+ }
+ 
+diff --git a/arrobe-site/api/events/index.js b/arrobe-site/api/events/index.js
+index 4b18234..d57afb5 100644
+--- a/arrobe-site/api/events/index.js
++++ b/arrobe-site/api/events/index.js
+@@ -15,6 +15,7 @@ import { prisma } from "../_lib/prisma.js";
+ import { readAdmin, requireAdmin } from "../_lib/auth.js";
+ import { route, readJsonBody, sendJson, sendError, getQuery } from "../_lib/http.js";
+ import { validateEvent, slugify } from "../_lib/validate.js";
++import { announceEvent } from "../_lib/newsletter.js";
+ 
+ const LIST_FIELDS = {
+   id: true,
+@@ -73,9 +74,13 @@ async function createEvent(req, res) {
+ 
+   const data = check.value;
+   data.slug = data.slug ?? slugify(data.title);
++  data.publishedAt = data.status === "PUBLISHED" ? new Date() : null;
+ 
+   const event = await prisma.event.create({ data });
+ 
++  // Créé directement avec le statut « Publié » : première publication.
++  if (event.status === "PUBLISHED") announceEvent(event);
++
+   res.setHeader("Location", `/api/events/${event.slug}`);
+   return sendJson(res, 201, { event });
+ }
+diff --git a/arrobe-site/package.json b/arrobe-site/package.json
+index 7122c2b..d1ad4d8 100644
+--- a/arrobe-site/package.json
++++ b/arrobe-site/package.json
+@@ -21,6 +21,7 @@
+     "@prisma/adapter-pg": "^7.10.0",
+     "@prisma/client": "^7.10.0",
+     "@vercel/blob": "^2.8.0",
++    "@vercel/functions": "^3.9.8",
+     "bcryptjs": "^3.0.3",
+     "dompurify": "^3.4.15",
+     "jose": "^6.2.12",
+diff --git a/arrobe-site/prisma/generated/client/internal/class.ts b/arrobe-site/prisma/generated/client/internal/class.ts
+index 1077023..6d19078 100644
+--- a/arrobe-site/prisma/generated/client/internal/class.ts
++++ b/arrobe-site/prisma/generated/client/internal/class.ts
+@@ -20,7 +20,7 @@ const config: runtime.GetPrismaClientConfig = {
+   "clientVersion": "7.10.0",
+   "engineVersion": "0edf323efd1d98336f3f0a68684b56f689b900d3",
+   "activeProvider": "postgresql",
+-  "inlineSchema": "// ===================================================================\n// Schéma Prisma — Association @Rrobe\n// ===================================================================\n// Base PostgreSQL : le site est déployé sur Vercel, dont le système de\n// fichiers est éphémère. SQLite est donc exclu — la base serait remise\n// à zéro à chaque déploiement.\n//\n//   DATABASE_URL       connexion applicative (peut passer par un pooler)\n//   DIRECT_URL         connexion directe, utilisée par les migrations\n//\n// Si ton hébergeur ne fournit qu'une seule URL (pas de pooling),\n// mets la même valeur dans les deux variables.\n// ===================================================================\n\ngenerator client {\n  // `prisma-client` (et non l'ancien `prisma-client-js`) : c'est le\n  // générateur de Prisma 7, qui produit de l'ESM natif — indispensable\n  // ici puisque package.json déclare \"type\": \"module\".\n  provider = \"prisma-client\"\n\n  // Volontairement HORS de src/ : le client Prisma ne doit jamais\n  // partir dans le bundle navigateur. S'il vivait dans src/, un import\n  // maladroit depuis un composant React l'y ferait entrer sans bruit.\n  output = \"../prisma/generated/client\"\n}\n\ndatasource db {\n  // Depuis Prisma 7, `url` et `directUrl` ne sont plus acceptés ici.\n  // L'URL des migrations vit dans prisma.config.js, celle de\n  // l'application est passée à l'adaptateur dans le code.\n  provider = \"postgresql\"\n}\n\n// -------------------------------------------------------------------\n// État de publication, partagé par les articles et les événements.\n// -------------------------------------------------------------------\nenum Status {\n  DRAFT\n  PUBLISHED\n}\n\n// -------------------------------------------------------------------\n// Admin\n// -------------------------------------------------------------------\n// Un seul compte, créé par le script de seed. L'identifiant est choisi\n// à la main (pas un e-mail) : c'est un login de back-office, il n'a pas\n// vocation à recevoir du courrier ni à être communiqué.\n//\n// Aucun mot de passe en clair n'est stocké : uniquement le hash bcrypt.\n// -------------------------------------------------------------------\nmodel Admin {\n  id           String   @id @default(cuid())\n  identifiant  String   @unique\n  passwordHash String\n  createdAt    DateTime @default(now())\n\n  @@map(\"admins\")\n}\n\n// -------------------------------------------------------------------\n// Article de blog\n// -------------------------------------------------------------------\nmodel Article {\n  id          String  @id @default(cuid())\n  slug        String  @unique\n  title       String\n  excerpt     String\n  content     String  @db.Text // HTML long, pas de limite de 191 caractères\n  image       String?\n  category    String\n  readingTime Int // en minutes\n  status      Status  @default(DRAFT)\n\n  // Renseignée uniquement au moment où l'article bascule en PUBLISHED.\n  // Reste null tant qu'il est en brouillon. Sert au tri et à l'affichage\n  // « Publié le … ». Ne jamais la confondre avec createdAt : un article\n  // peut être rédigé en janvier et publié en mars.\n  publishedAt DateTime?\n\n  createdAt DateTime @default(now())\n  updatedAt DateTime @updatedAt\n\n  // Le site public ne lit que les articles publiés, du plus récent au\n  // plus ancien : cet index couvre exactement cette requête.\n  @@index([status, publishedAt(sort: Desc)])\n  @@index([category])\n  @@map(\"articles\")\n}\n\n// -------------------------------------------------------------------\n// Événement\n// -------------------------------------------------------------------\n// Pas de champ « à venir / passé » en base : ce serait une donnée\n// périmée dès le lendemain. Le tri se calcule à la lecture en comparant\n// `date` à l'instant présent.\n// -------------------------------------------------------------------\nmodel Event {\n  id          String   @id @default(cuid())\n  slug        String   @unique\n  title       String\n  description String // résumé court, affiché dans les listes\n  content     String   @db.Text // HTML long, page de détail\n  image       String?\n  category    String\n  date        DateTime\n  location    String\n  organizer   String\n\n  // Compte rendu rédigé APRÈS l'événement : photos, retour sur la\n  // journée. Reste null tant que rien n'est écrit — l'affichage\n  // retombe alors sur `content`. Nullable et non obligatoire : un\n  // événement passé sans compte rendu est un cas normal, pas une\n  // erreur de saisie.\n  recap String? @db.Text\n\n  status    Status   @default(DRAFT)\n  createdAt DateTime @default(now())\n  updatedAt DateTime @updatedAt\n\n  registrations Registration[]\n\n  @@index([status, date])\n  @@index([date])\n  @@map(\"events\")\n}\n\n// -------------------------------------------------------------------\n// Inscription à un événement\n// -------------------------------------------------------------------\nmodel Registration {\n  id             String   @id @default(cuid())\n  eventId        String\n  name           String\n  email          String\n  phone          String?\n  numberOfPeople Int      @default(1)\n  createdAt      DateTime @default(now())\n\n  // Supprimer un événement supprime ses inscriptions : sans cela, la\n  // suppression échouerait sur la contrainte de clé étrangère.\n  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)\n\n  @@index([eventId])\n  @@map(\"registrations\")\n}\n\n// -------------------------------------------------------------------\n// Abonné à la newsletter\n// -------------------------------------------------------------------\n// Aucune donnée personnelle au-delà de l'adresse : le formulaire ne\n// demande que l'e-mail, la base n'en stocke pas davantage.\n//\n// `email` doit être normalisé AVANT l'écriture (trim + minuscules) :\n// la contrainte d'unicité de PostgreSQL est sensible à la casse, et\n// « Jean@x.fr » / « jean@x.fr » deviendraient sinon deux abonnés.\n//\n// `unsubscribeToken` sert au lien « Se désabonner » de chaque e-mail.\n// Il doit être imprévisible : c'est lui seul qui autorise la\n// désinscription, sans connexion. D'où `uuid()` et non `cuid()` —\n// Prisma le produit avec crypto.randomUUID(), soit 122 bits d'aléa\n// issus du générateur cryptographique. Un cuid est conçu pour être\n// unique, pas pour être secret.\n// -------------------------------------------------------------------\nmodel Subscriber {\n  id               String   @id @default(cuid())\n  email            String   @unique\n  unsubscribeToken String   @unique @default(uuid())\n  createdAt        DateTime @default(now())\n\n  @@map(\"subscribers\")\n}\n",
++  "inlineSchema": "// ===================================================================\n// Schéma Prisma — Association @Rrobe\n// ===================================================================\n// Base PostgreSQL : le site est déployé sur Vercel, dont le système de\n// fichiers est éphémère. SQLite est donc exclu — la base serait remise\n// à zéro à chaque déploiement.\n//\n//   DATABASE_URL       connexion applicative (peut passer par un pooler)\n//   DIRECT_URL         connexion directe, utilisée par les migrations\n//\n// Si ton hébergeur ne fournit qu'une seule URL (pas de pooling),\n// mets la même valeur dans les deux variables.\n// ===================================================================\n\ngenerator client {\n  // `prisma-client` (et non l'ancien `prisma-client-js`) : c'est le\n  // générateur de Prisma 7, qui produit de l'ESM natif — indispensable\n  // ici puisque package.json déclare \"type\": \"module\".\n  provider = \"prisma-client\"\n\n  // Volontairement HORS de src/ : le client Prisma ne doit jamais\n  // partir dans le bundle navigateur. S'il vivait dans src/, un import\n  // maladroit depuis un composant React l'y ferait entrer sans bruit.\n  output = \"../prisma/generated/client\"\n}\n\ndatasource db {\n  // Depuis Prisma 7, `url` et `directUrl` ne sont plus acceptés ici.\n  // L'URL des migrations vit dans prisma.config.js, celle de\n  // l'application est passée à l'adaptateur dans le code.\n  provider = \"postgresql\"\n}\n\n// -------------------------------------------------------------------\n// État de publication, partagé par les articles et les événements.\n// -------------------------------------------------------------------\nenum Status {\n  DRAFT\n  PUBLISHED\n}\n\n// -------------------------------------------------------------------\n// Admin\n// -------------------------------------------------------------------\n// Un seul compte, créé par le script de seed. L'identifiant est choisi\n// à la main (pas un e-mail) : c'est un login de back-office, il n'a pas\n// vocation à recevoir du courrier ni à être communiqué.\n//\n// Aucun mot de passe en clair n'est stocké : uniquement le hash bcrypt.\n// -------------------------------------------------------------------\nmodel Admin {\n  id           String   @id @default(cuid())\n  identifiant  String   @unique\n  passwordHash String\n  createdAt    DateTime @default(now())\n\n  @@map(\"admins\")\n}\n\n// -------------------------------------------------------------------\n// Article de blog\n// -------------------------------------------------------------------\nmodel Article {\n  id          String  @id @default(cuid())\n  slug        String  @unique\n  title       String\n  excerpt     String\n  content     String  @db.Text // HTML long, pas de limite de 191 caractères\n  image       String?\n  category    String\n  readingTime Int // en minutes\n  status      Status  @default(DRAFT)\n\n  // Renseignée uniquement au moment où l'article bascule en PUBLISHED.\n  // Reste null tant qu'il est en brouillon. Sert au tri et à l'affichage\n  // « Publié le … ». Ne jamais la confondre avec createdAt : un article\n  // peut être rédigé en janvier et publié en mars.\n  publishedAt DateTime?\n\n  createdAt DateTime @default(now())\n  updatedAt DateTime @updatedAt\n\n  // Le site public ne lit que les articles publiés, du plus récent au\n  // plus ancien : cet index couvre exactement cette requête.\n  @@index([status, publishedAt(sort: Desc)])\n  @@index([category])\n  @@map(\"articles\")\n}\n\n// -------------------------------------------------------------------\n// Événement\n// -------------------------------------------------------------------\n// Pas de champ « à venir / passé » en base : ce serait une donnée\n// périmée dès le lendemain. Le tri se calcule à la lecture en comparant\n// `date` à l'instant présent.\n// -------------------------------------------------------------------\nmodel Event {\n  id          String   @id @default(cuid())\n  slug        String   @unique\n  title       String\n  description String // résumé court, affiché dans les listes\n  content     String   @db.Text // HTML long, page de détail\n  image       String?\n  category    String\n  date        DateTime\n  location    String\n  organizer   String\n\n  // Compte rendu rédigé APRÈS l'événement : photos, retour sur la\n  // journée. Reste null tant que rien n'est écrit — l'affichage\n  // retombe alors sur `content`. Nullable et non obligatoire : un\n  // événement passé sans compte rendu est un cas normal, pas une\n  // erreur de saisie.\n  recap String? @db.Text\n\n  status Status @default(DRAFT)\n\n  // Renseignée à la PREMIÈRE publication, jamais effacée ensuite —\n  // même principe que pour les articles. Sert à n'annoncer un\n  // événement aux abonnés de la newsletter qu'une seule fois : un\n  // passage en brouillon puis retour en publié ne renvoie pas de mail.\n  publishedAt DateTime?\n\n  createdAt DateTime @default(now())\n  updatedAt DateTime @updatedAt\n\n  registrations Registration[]\n\n  @@index([status, date])\n  @@index([date])\n  @@map(\"events\")\n}\n\n// -------------------------------------------------------------------\n// Inscription à un événement\n// -------------------------------------------------------------------\nmodel Registration {\n  id             String   @id @default(cuid())\n  eventId        String\n  name           String\n  email          String\n  phone          String?\n  numberOfPeople Int      @default(1)\n  createdAt      DateTime @default(now())\n\n  // Supprimer un événement supprime ses inscriptions : sans cela, la\n  // suppression échouerait sur la contrainte de clé étrangère.\n  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)\n\n  @@index([eventId])\n  @@map(\"registrations\")\n}\n\n// -------------------------------------------------------------------\n// Abonné à la newsletter\n// -------------------------------------------------------------------\n// Aucune donnée personnelle au-delà de l'adresse : le formulaire ne\n// demande que l'e-mail, la base n'en stocke pas davantage.\n//\n// `email` doit être normalisé AVANT l'écriture (trim + minuscules) :\n// la contrainte d'unicité de PostgreSQL est sensible à la casse, et\n// « Jean@x.fr » / « jean@x.fr » deviendraient sinon deux abonnés.\n//\n// `unsubscribeToken` sert au lien « Se désabonner » de chaque e-mail.\n// Il doit être imprévisible : c'est lui seul qui autorise la\n// désinscription, sans connexion. D'où `uuid()` et non `cuid()` —\n// Prisma le produit avec crypto.randomUUID(), soit 122 bits d'aléa\n// issus du générateur cryptographique. Un cuid est conçu pour être\n// unique, pas pour être secret.\n// -------------------------------------------------------------------\nmodel Subscriber {\n  id               String   @id @default(cuid())\n  email            String   @unique\n  unsubscribeToken String   @unique @default(uuid())\n  createdAt        DateTime @default(now())\n\n  @@map(\"subscribers\")\n}\n",
+   "runtimeDataModel": {
+     "models": {},
+     "enums": {},
+@@ -32,10 +32,10 @@ const config: runtime.GetPrismaClientConfig = {
+   }
+ }
+ 
+-config.runtimeDataModel = JSON.parse("{\"models\":{\"Admin\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"identifiant\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"passwordHash\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"}],\"dbName\":\"admins\",\"schema\":null},\"Article\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"slug\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"title\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"excerpt\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"content\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"image\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"category\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"readingTime\",\"kind\":\"scalar\",\"type\":\"Int\"},{\"name\":\"status\",\"kind\":\"enum\",\"type\":\"Status\"},{\"name\":\"publishedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"updatedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"}],\"dbName\":\"articles\",\"schema\":null},\"Event\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"slug\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"title\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"description\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"content\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"image\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"category\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"date\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"location\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"organizer\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"recap\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"status\",\"kind\":\"enum\",\"type\":\"Status\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"updatedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"registrations\",\"kind\":\"object\",\"type\":\"Registration\",\"relationName\":\"EventToRegistration\"}],\"dbName\":\"events\",\"schema\":null},\"Registration\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"eventId\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"name\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"email\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"phone\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"numberOfPeople\",\"kind\":\"scalar\",\"type\":\"Int\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"event\",\"kind\":\"object\",\"type\":\"Event\",\"relationName\":\"EventToRegistration\"}],\"dbName\":\"registrations\",\"schema\":null},\"Subscriber\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"email\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"unsubscribeToken\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"}],\"dbName\":\"subscribers\",\"schema\":null}},\"enums\":{},\"types\":{}}")
++config.runtimeDataModel = JSON.parse("{\"models\":{\"Admin\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"identifiant\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"passwordHash\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"}],\"dbName\":\"admins\",\"schema\":null},\"Article\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"slug\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"title\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"excerpt\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"content\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"image\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"category\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"readingTime\",\"kind\":\"scalar\",\"type\":\"Int\"},{\"name\":\"status\",\"kind\":\"enum\",\"type\":\"Status\"},{\"name\":\"publishedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"updatedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"}],\"dbName\":\"articles\",\"schema\":null},\"Event\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"slug\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"title\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"description\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"content\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"image\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"category\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"date\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"location\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"organizer\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"recap\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"status\",\"kind\":\"enum\",\"type\":\"Status\"},{\"name\":\"publishedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"updatedAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"registrations\",\"kind\":\"object\",\"type\":\"Registration\",\"relationName\":\"EventToRegistration\"}],\"dbName\":\"events\",\"schema\":null},\"Registration\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"eventId\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"name\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"email\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"phone\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"numberOfPeople\",\"kind\":\"scalar\",\"type\":\"Int\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"},{\"name\":\"event\",\"kind\":\"object\",\"type\":\"Event\",\"relationName\":\"EventToRegistration\"}],\"dbName\":\"registrations\",\"schema\":null},\"Subscriber\":{\"fields\":[{\"name\":\"id\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"email\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"unsubscribeToken\",\"kind\":\"scalar\",\"type\":\"String\"},{\"name\":\"createdAt\",\"kind\":\"scalar\",\"type\":\"DateTime\"}],\"dbName\":\"subscribers\",\"schema\":null}},\"enums\":{},\"types\":{}}")
+ config.parameterizationSchema = {
+-  strings: JSON.parse("[\"where\",\"Admin.findUnique\",\"Admin.findUniqueOrThrow\",\"orderBy\",\"cursor\",\"Admin.findFirst\",\"Admin.findFirstOrThrow\",\"Admin.findMany\",\"data\",\"Admin.createOne\",\"Admin.createMany\",\"Admin.createManyAndReturn\",\"Admin.updateOne\",\"Admin.updateMany\",\"Admin.updateManyAndReturn\",\"create\",\"update\",\"Admin.upsertOne\",\"Admin.deleteOne\",\"Admin.deleteMany\",\"having\",\"_count\",\"_min\",\"_max\",\"Admin.groupBy\",\"Admin.aggregate\",\"Article.findUnique\",\"Article.findUniqueOrThrow\",\"Article.findFirst\",\"Article.findFirstOrThrow\",\"Article.findMany\",\"Article.createOne\",\"Article.createMany\",\"Article.createManyAndReturn\",\"Article.updateOne\",\"Article.updateMany\",\"Article.updateManyAndReturn\",\"Article.upsertOne\",\"Article.deleteOne\",\"Article.deleteMany\",\"_avg\",\"_sum\",\"Article.groupBy\",\"Article.aggregate\",\"event\",\"registrations\",\"Event.findUnique\",\"Event.findUniqueOrThrow\",\"Event.findFirst\",\"Event.findFirstOrThrow\",\"Event.findMany\",\"Event.createOne\",\"Event.createMany\",\"Event.createManyAndReturn\",\"Event.updateOne\",\"Event.updateMany\",\"Event.updateManyAndReturn\",\"Event.upsertOne\",\"Event.deleteOne\",\"Event.deleteMany\",\"Event.groupBy\",\"Event.aggregate\",\"Registration.findUnique\",\"Registration.findUniqueOrThrow\",\"Registration.findFirst\",\"Registration.findFirstOrThrow\",\"Registration.findMany\",\"Registration.createOne\",\"Registration.createMany\",\"Registration.createManyAndReturn\",\"Registration.updateOne\",\"Registration.updateMany\",\"Registration.updateManyAndReturn\",\"Registration.upsertOne\",\"Registration.deleteOne\",\"Registration.deleteMany\",\"Registration.groupBy\",\"Registration.aggregate\",\"Subscriber.findUnique\",\"Subscriber.findUniqueOrThrow\",\"Subscriber.findFirst\",\"Subscriber.findFirstOrThrow\",\"Subscriber.findMany\",\"Subscriber.createOne\",\"Subscriber.createMany\",\"Subscriber.createManyAndReturn\",\"Subscriber.updateOne\",\"Subscriber.updateMany\",\"Subscriber.updateManyAndReturn\",\"Subscriber.upsertOne\",\"Subscriber.deleteOne\",\"Subscriber.deleteMany\",\"Subscriber.groupBy\",\"Subscriber.aggregate\",\"AND\",\"OR\",\"NOT\",\"id\",\"email\",\"unsubscribeToken\",\"createdAt\",\"equals\",\"in\",\"notIn\",\"lt\",\"lte\",\"gt\",\"gte\",\"not\",\"contains\",\"startsWith\",\"endsWith\",\"eventId\",\"name\",\"phone\",\"numberOfPeople\",\"slug\",\"title\",\"description\",\"content\",\"image\",\"category\",\"date\",\"location\",\"organizer\",\"recap\",\"Status\",\"status\",\"updatedAt\",\"every\",\"some\",\"none\",\"excerpt\",\"readingTime\",\"publishedAt\",\"identifiant\",\"passwordHash\",\"is\",\"isNot\",\"connectOrCreate\",\"upsert\",\"createMany\",\"set\",\"disconnect\",\"delete\",\"connect\",\"updateMany\",\"deleteMany\",\"increment\",\"decrement\",\"multiply\",\"divide\"]"),
+-  graph: "1wEuUAdeAAClAQAwXwAABAAQYAAApQEAMGEBAAAAAWRAAIoBACGHAQEAAAABiAEBAIkBACEBAAAAAQAgAQAAAAEAIAdeAAClAQAwXwAABAAQYAAApQEAMGEBAIkBACFkQACKAQAhhwEBAIkBACGIAQEAiQEAIQADAAAABAAgAwAABQAwBAAAAQAgAwAAAAQAIAMAAAUAMAQAAAEAIAMAAAAEACADAAAFADAEAAABACAEYQEAAAABZEAAAAABhwEBAAAAAYgBAQAAAAEBCAAACQAgBGEBAAAAAWRAAAAAAYcBAQAAAAGIAQEAAAABAQgAAAsAMAEIAAALADAEYQEAqQEAIWRAAKoBACGHAQEAqQEAIYgBAQCpAQAhAgAAAAEAIAgAAA4AIARhAQCpAQAhZEAAqgEAIYcBAQCpAQAhiAEBAKkBACECAAAABAAgCAAAEAAgAgAAAAQAIAgAABAAIAMAAAABACAPAAAJACAQAAAOACABAAAAAQAgAQAAAAQAIAMVAADPAQAgFgAA0QEAIBcAANABACAHXgAApAEAMF8AABcAEGAAAKQBADBhAQCBAQAhZEAAggEAIYcBAQCBAQAhiAEBAIEBACEDAAAABAAgAwAAFgAwFAAAFwAgAwAAAAQAIAMAAAUAMAQAAAEAIA9eAACiAQAwXwAAHQAQYAAAogEAMGEBAAAAAWRAAIoBACF0AQAAAAF1AQCJAQAhdwEAiQEAIXgBAJgBACF5AQCJAQAhfwAAmQF_IoABQACKAQAhhAEBAIkBACGFAQIAnAEAIYYBQACjAQAhAQAAABoAIAEAAAAaACAPXgAAogEAMF8AAB0AEGAAAKIBADBhAQCJAQAhZEAAigEAIXQBAIkBACF1AQCJAQAhdwEAiQEAIXgBAJgBACF5AQCJAQAhfwAAmQF_IoABQACKAQAhhAEBAIkBACGFAQIAnAEAIYYBQACjAQAhAngAAKsBACCGAQAAqwEAIAMAAAAdACADAAAeADAEAAAaACADAAAAHQAgAwAAHgAwBAAAGgAgAwAAAB0AIAMAAB4AMAQAABoAIAxhAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF_AAAAfwKAAUAAAAABhAEBAAAAAYUBAgAAAAGGAUAAAAABAQgAACIAIAxhAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF_AAAAfwKAAUAAAAABhAEBAAAAAYUBAgAAAAGGAUAAAAABAQgAACQAMAEIAAAkADAMYQEAqQEAIWRAAKoBACF0AQCpAQAhdQEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIX8AALgBfyKAAUAAqgEAIYQBAQCpAQAhhQECALIBACGGAUAAzgEAIQIAAAAaACAIAAAnACAMYQEAqQEAIWRAAKoBACF0AQCpAQAhdQEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIX8AALgBfyKAAUAAqgEAIYQBAQCpAQAhhQECALIBACGGAUAAzgEAIQIAAAAdACAIAAApACACAAAAHQAgCAAAKQAgAwAAABoAIA8AACIAIBAAACcAIAEAAAAaACABAAAAHQAgBxUAAMkBACAWAADMAQAgFwAAywEAICgAAMoBACApAADNAQAgeAAAqwEAIIYBAACrAQAgD14AAJ4BADBfAAAwABBgAACeAQAwYQEAgQEAIWRAAIIBACF0AQCBAQAhdQEAgQEAIXcBAIEBACF4AQCMAQAheQEAgQEAIX8AAJQBfyKAAUAAggEAIYQBAQCBAQAhhQECAI0BACGGAUAAnwEAIQMAAAAdACADAAAvADAUAAAwACADAAAAHQAgAwAAHgAwBAAAGgAgEi0AAJoBACBeAACXAQAwXwAAOwAQYAAAlwEAMGEBAAAAAWRAAIoBACF0AQAAAAF1AQCJAQAhdgEAiQEAIXcBAIkBACF4AQCYAQAheQEAiQEAIXpAAIoBACF7AQCJAQAhfAEAiQEAIX0BAJgBACF_AACZAX8igAFAAIoBACEBAAAAMwAgCywAAJ0BACBeAACbAQAwXwAANQAQYAAAmwEAMGEBAIkBACFiAQCJAQAhZEAAigEAIXABAIkBACFxAQCJAQAhcgEAmAEAIXMCAJwBACECLAAAyAEAIHIAAKsBACALLAAAnQEAIF4AAJsBADBfAAA1ABBgAACbAQAwYQEAAAABYgEAiQEAIWRAAIoBACFwAQCJAQAhcQEAiQEAIXIBAJgBACFzAgCcAQAhAwAAADUAIAMAADYAMAQAADcAIAEAAAA1ACABAAAAMwAgEi0AAJoBACBeAACXAQAwXwAAOwAQYAAAlwEAMGEBAIkBACFkQACKAQAhdAEAiQEAIXUBAIkBACF2AQCJAQAhdwEAiQEAIXgBAJgBACF5AQCJAQAhekAAigEAIXsBAIkBACF8AQCJAQAhfQEAmAEAIX8AAJkBfyKAAUAAigEAIQMtAADHAQAgeAAAqwEAIH0AAKsBACADAAAAOwAgAwAAPAAwBAAAMwAgAwAAADsAIAMAADwAMAQAADMAIAMAAAA7ACADAAA8ADAEAAAzACAPLQAAxgEAIGEBAAAAAWRAAAAAAXQBAAAAAXUBAAAAAXYBAAAAAXcBAAAAAXgBAAAAAXkBAAAAAXpAAAAAAXsBAAAAAXwBAAAAAX0BAAAAAX8AAAB_AoABQAAAAAEBCAAAQAAgDmEBAAAAAWRAAAAAAXQBAAAAAXUBAAAAAXYBAAAAAXcBAAAAAXgBAAAAAXkBAAAAAXpAAAAAAXsBAAAAAXwBAAAAAX0BAAAAAX8AAAB_AoABQAAAAAEBCAAAQgAwAQgAAEIAMA8tAAC5AQAgYQEAqQEAIWRAAKoBACF0AQCpAQAhdQEAqQEAIXYBAKkBACF3AQCpAQAheAEAsQEAIXkBAKkBACF6QACqAQAhewEAqQEAIXwBAKkBACF9AQCxAQAhfwAAuAF_IoABQACqAQAhAgAAADMAIAgAAEUAIA5hAQCpAQAhZEAAqgEAIXQBAKkBACF1AQCpAQAhdgEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIXpAAKoBACF7AQCpAQAhfAEAqQEAIX0BALEBACF_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_AACUAX8igAFAAIIBACEHFQAAhAEAIBYAAJYBACAXAACWAQAgZQAAAH8CZgAAAH8IZwAAAH8IbAAAlQF_IgcVAACEAQAgFgAAlgEAIBcAAJYBACBlAAAAfwJmAAAAfwhnAAAAfwhsAACVAX8iBGUAAAB_AmYAAAB_CGcAAAB_CGwAAJYBfyISLQAAmgEAIF4AAJcBADBfAAA7ABBgAACXAQAwYQEAiQEAIWRAAIoBACF0AQCJAQAhdQEAiQEAIXYBAIkBACF3AQCJAQAheAEAmAEAIXkBAIkBACF6QACKAQAhewEAiQEAIXwBAIkBACF9AQCYAQAhfwAAmQF_IoABQACKAQAhC2UBAAAAAWYBAAAABWcBAAAABWgBAAAAAWkBAAAAAWoBAAAAAWsBAAAAAWwBAJIBACFtAQAAAAFuAQAAAAFvAQAAAAEEZQAAAH8CZgAAAH8IZwAAAH8IbAAAlgF_IgOBAQAANQAgggEAADUAIIMBAAA1ACALLAAAnQEAIF4AAJsBADBfAAA1ABBgAACbAQAwYQEAiQEAIWIBAIkBACFkQACKAQAhcAEAiQEAIXEBAIkBACFyAQCYAQAhcwIAnAEAIQhlAgAAAAFmAgAAAARnAgAAAARoAgAAAAFpAgAAAAFqAgAAAAFrAgAAAAFsAgCEAQAhFC0AAJoBACBeAACXAQAwXwAAOwAQYAAAlwEAMGEBAIkBACFkQACKAQAhdAEAiQEAIXUBAIkBACF2AQCJAQAhdwEAiQEAIXgBAJgBACF5AQCJAQAhekAAigEAIXsBAIkBACF8AQCJAQAhfQEAmAEAIX8AAJkBfyKAAUAAigEAIYkBAAA7ACCKAQAAOwAgD14AAJ4BADBfAAAwABBgAACeAQAwYQEAgQEAIWRAAIIBACF0AQCBAQAhdQEAgQEAIXcBAIEBACF4AQCMAQAheQEAgQEAIX8AAJQBfyKAAUAAggEAIYQBAQCBAQAhhQECAI0BACGGAUAAnwEAIQsVAACRAQAgFgAAoQEAIBcAAKEBACBlQAAAAAFmQAAAAAVnQAAAAAVoQAAAAAFpQAAAAAFqQAAAAAFrQAAAAAFsQACgAQAhCxUAAJEBACAWAAChAQAgFwAAoQEAIGVAAAAAAWZAAAAABWdAAAAABWhAAAAAAWlAAAAAAWpAAAAAAWtAAAAAAWxAAKABACEIZUAAAAABZkAAAAAFZ0AAAAAFaEAAAAABaUAAAAABakAAAAABa0AAAAABbEAAoQEAIQ9eAACiAQAwXwAAHQAQYAAAogEAMGEBAIkBACFkQACKAQAhdAEAiQEAIXUBAIkBACF3AQCJAQAheAEAmAEAIXkBAIkBACF_AACZAX8igAFAAIoBACGEAQEAiQEAIYUBAgCcAQAhhgFAAKMBACEIZUAAAAABZkAAAAAFZ0AAAAAFaEAAAAABaUAAAAABakAAAAABa0AAAAABbEAAoQEAIQdeAACkAQAwXwAAFwAQYAAApAEAMGEBAIEBACFkQACCAQAhhwEBAIEBACGIAQEAgQEAIQdeAAClAQAwXwAABAAQYAAApQEAMGEBAIkBACFkQACKAQAhhwEBAIkBACGIAQEAiQEAIQAAAAGOAQEAAAABAY4BQAAAAAEAAAAAAAABjgEBAAAAAQWOAQIAAAABlAECAAAAAZUBAgAAAAGWAQIAAAABlwECAAAAAQUPAADTAQAgEAAA1gEAIIsBAADUAQAgjAEAANUBACCRAQAAMwAgAw8AANMBACCLAQAA1AEAIJEBAAAzACAAAAABjgEAAAB_AgsPAAC6AQAwEAAAvwEAMIsBAAC7AQAwjAEAALwBADCNAQAAvQEAII4BAAC-AQAwjwEAAL4BADCQAQAAvgEAMJEBAAC-AQAwkgEAAMABADCTAQAAwQEAMAZhAQAAAAFiAQAAAAFkQAAAAAFxAQAAAAFyAQAAAAFzAgAAAAECAAAANwAgDwAAxQEAIAMAAAA3ACAPAADFAQAgEAAAxAEAIAEIAADSAQAwCywAAJ0BACBeAACbAQAwXwAANQAQYAAAmwEAMGEBAAAAAWIBAIkBACFkQACKAQAhcAEAiQEAIXEBAIkBACFyAQCYAQAhcwIAnAEAIQIAAAA3ACAIAADEAQAgAgAAAMIBACAIAADDAQAgCl4AAMEBADBfAADCAQAQYAAAwQEAMGEBAIkBACFiAQCJAQAhZEAAigEAIXABAIkBACFxAQCJAQAhcgEAmAEAIXMCAJwBACEKXgAAwQEAMF8AAMIBABBgAADBAQAwYQEAiQEAIWIBAIkBACFkQACKAQAhcAEAiQEAIXEBAIkBACFyAQCYAQAhcwIAnAEAIQZhAQCpAQAhYgEAqQEAIWRAAKoBACFxAQCpAQAhcgEAsQEAIXMCALIBACEGYQEAqQEAIWIBAKkBACFkQACqAQAhcQEAqQEAIXIBALEBACFzAgCyAQAhBmEBAAAAAWIBAAAAAWRAAAAAAXEBAAAAAXIBAAAAAXMCAAAAAQQPAAC6AQAwiwEAALsBADCNAQAAvQEAIJEBAAC-AQAwAAMtAADHAQAgeAAAqwEAIH0AAKsBACAAAAAAAAGOAUAAAAABAAAABmEBAAAAAWIBAAAAAWRAAAAAAXEBAAAAAXIBAAAAAXMCAAAAAQ5hAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF2AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF6QAAAAAF7AQAAAAF8AQAAAAF9AQAAAAF_AAAAfwKAAUAAAAABAgAAADMAIA8AANMBACADAAAAOwAgDwAA0wEAIBAAANcBACAQAAAAOwAgCAAA1wEAIGEBAKkBACFkQACqAQAhdAEAqQEAIXUBAKkBACF2AQCpAQAhdwEAqQEAIXgBALEBACF5AQCpAQAhekAAqgEAIXsBAKkBACF8AQCpAQAhfQEAsQEAIX8AALgBfyKAAUAAqgEAIQ5hAQCpAQAhZEAAqgEAIXQBAKkBACF1AQCpAQAhdgEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIXpAAKoBACF7AQCpAQAhfAEAqQEAIX0BALEBACF_AAC4AX8igAFAAKoBACEAAAAAAxUABhYABxcACAAAAAMVAAYWAAcXAAgAAAAFFQAOFgARFwASKAAPKQAQAAAAAAAFFQAOFgARFwASKAAPKQAQAhUAFi04FQEsABQBLTkAAAADFQAaFgAbFwAcAAAAAxUAGhYAGxcAHAEsABQBLAAUBRUAIRYAJBcAJSgAIikAIwAAAAAABRUAIRYAJBcAJSgAIikAIwAAAAMVACsWACwXAC0AAAADFQArFgAsFwAtAQIBAgMBBQYBBgcBBwgBCQoBCgwCCw0DDA8BDRECDhIEERMBEhQBExUCGBgFGRkJGhsKGxwKHB8KHSAKHiEKHyMKICUCISYLIigKIyoCJCsMJSwKJi0KJy4CKjENKzITLjQULzoUMD0UMT4UMj8UM0EUNEMCNUQXNkYUN0gCOEkYOUoUOksUO0wCPE8ZPVAdPlEVP1IVQFMVQVQVQlUVQ1cVRFkCRVoeRlwVR14CSF8fSWAVSmEVS2ICTGUgTWYmTmgnT2knUGwnUW0nUm4nU3AnVHICVXMoVnUnV3cCWHgpWXknWnonW3sCXH4qXX8u"
++  strings: JSON.parse("[\"where\",\"Admin.findUnique\",\"Admin.findUniqueOrThrow\",\"orderBy\",\"cursor\",\"Admin.findFirst\",\"Admin.findFirstOrThrow\",\"Admin.findMany\",\"data\",\"Admin.createOne\",\"Admin.createMany\",\"Admin.createManyAndReturn\",\"Admin.updateOne\",\"Admin.updateMany\",\"Admin.updateManyAndReturn\",\"create\",\"update\",\"Admin.upsertOne\",\"Admin.deleteOne\",\"Admin.deleteMany\",\"having\",\"_count\",\"_min\",\"_max\",\"Admin.groupBy\",\"Admin.aggregate\",\"Article.findUnique\",\"Article.findUniqueOrThrow\",\"Article.findFirst\",\"Article.findFirstOrThrow\",\"Article.findMany\",\"Article.createOne\",\"Article.createMany\",\"Article.createManyAndReturn\",\"Article.updateOne\",\"Article.updateMany\",\"Article.updateManyAndReturn\",\"Article.upsertOne\",\"Article.deleteOne\",\"Article.deleteMany\",\"_avg\",\"_sum\",\"Article.groupBy\",\"Article.aggregate\",\"event\",\"registrations\",\"Event.findUnique\",\"Event.findUniqueOrThrow\",\"Event.findFirst\",\"Event.findFirstOrThrow\",\"Event.findMany\",\"Event.createOne\",\"Event.createMany\",\"Event.createManyAndReturn\",\"Event.updateOne\",\"Event.updateMany\",\"Event.updateManyAndReturn\",\"Event.upsertOne\",\"Event.deleteOne\",\"Event.deleteMany\",\"Event.groupBy\",\"Event.aggregate\",\"Registration.findUnique\",\"Registration.findUniqueOrThrow\",\"Registration.findFirst\",\"Registration.findFirstOrThrow\",\"Registration.findMany\",\"Registration.createOne\",\"Registration.createMany\",\"Registration.createManyAndReturn\",\"Registration.updateOne\",\"Registration.updateMany\",\"Registration.updateManyAndReturn\",\"Registration.upsertOne\",\"Registration.deleteOne\",\"Registration.deleteMany\",\"Registration.groupBy\",\"Registration.aggregate\",\"Subscriber.findUnique\",\"Subscriber.findUniqueOrThrow\",\"Subscriber.findFirst\",\"Subscriber.findFirstOrThrow\",\"Subscriber.findMany\",\"Subscriber.createOne\",\"Subscriber.createMany\",\"Subscriber.createManyAndReturn\",\"Subscriber.updateOne\",\"Subscriber.updateMany\",\"Subscriber.updateManyAndReturn\",\"Subscriber.upsertOne\",\"Subscriber.deleteOne\",\"Subscriber.deleteMany\",\"Subscriber.groupBy\",\"Subscriber.aggregate\",\"AND\",\"OR\",\"NOT\",\"id\",\"email\",\"unsubscribeToken\",\"createdAt\",\"equals\",\"in\",\"notIn\",\"lt\",\"lte\",\"gt\",\"gte\",\"not\",\"contains\",\"startsWith\",\"endsWith\",\"eventId\",\"name\",\"phone\",\"numberOfPeople\",\"slug\",\"title\",\"description\",\"content\",\"image\",\"category\",\"date\",\"location\",\"organizer\",\"recap\",\"Status\",\"status\",\"publishedAt\",\"updatedAt\",\"every\",\"some\",\"none\",\"excerpt\",\"readingTime\",\"identifiant\",\"passwordHash\",\"is\",\"isNot\",\"connectOrCreate\",\"upsert\",\"createMany\",\"set\",\"disconnect\",\"delete\",\"connect\",\"updateMany\",\"deleteMany\",\"increment\",\"decrement\",\"multiply\",\"divide\"]"),
++  graph: "1wEuUAdeAAClAQAwXwAABAAQYAAApQEAMGEBAAAAAWRAAIoBACGHAQEAAAABiAEBAIkBACEBAAAAAQAgAQAAAAEAIAdeAAClAQAwXwAABAAQYAAApQEAMGEBAIkBACFkQACKAQAhhwEBAIkBACGIAQEAiQEAIQADAAAABAAgAwAABQAwBAAAAQAgAwAAAAQAIAMAAAUAMAQAAAEAIAMAAAAEACADAAAFADAEAAABACAEYQEAAAABZEAAAAABhwEBAAAAAYgBAQAAAAEBCAAACQAgBGEBAAAAAWRAAAAAAYcBAQAAAAGIAQEAAAABAQgAAAsAMAEIAAALADAEYQEAqQEAIWRAAKoBACGHAQEAqQEAIYgBAQCpAQAhAgAAAAEAIAgAAA4AIARhAQCpAQAhZEAAqgEAIYcBAQCpAQAhiAEBAKkBACECAAAABAAgCAAAEAAgAgAAAAQAIAgAABAAIAMAAAABACAPAAAJACAQAAAOACABAAAAAQAgAQAAAAQAIAMVAADPAQAgFgAA0QEAIBcAANABACAHXgAApAEAMF8AABcAEGAAAKQBADBhAQCBAQAhZEAAggEAIYcBAQCBAQAhiAEBAIEBACEDAAAABAAgAwAAFgAwFAAAFwAgAwAAAAQAIAMAAAUAMAQAAAEAIA9eAACjAQAwXwAAHQAQYAAAowEAMGEBAAAAAWRAAIoBACF0AQAAAAF1AQCJAQAhdwEAiQEAIXgBAJsBACF5AQCJAQAhfwAAnAF_IoABQACdAQAhgQFAAIoBACGFAQEAiQEAIYYBAgCgAQAhAQAAABoAIAEAAAAaACAPXgAAowEAMF8AAB0AEGAAAKMBADBhAQCJAQAhZEAAigEAIXQBAIkBACF1AQCJAQAhdwEAiQEAIXgBAJsBACF5AQCJAQAhfwAAnAF_IoABQACdAQAhgQFAAIoBACGFAQEAiQEAIYYBAgCgAQAhAngAAKsBACCAAQAAqwEAIAMAAAAdACADAAAeADAEAAAaACADAAAAHQAgAwAAHgAwBAAAGgAgAwAAAB0AIAMAAB4AMAQAABoAIAxhAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF_AAAAfwKAAUAAAAABgQFAAAAAAYUBAQAAAAGGAQIAAAABAQgAACIAIAxhAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF_AAAAfwKAAUAAAAABgQFAAAAAAYUBAQAAAAGGAQIAAAABAQgAACQAMAEIAAAkADAMYQEAqQEAIWRAAKoBACF0AQCpAQAhdQEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIX8AALgBfyKAAUAAuQEAIYEBQACqAQAhhQEBAKkBACGGAQIAsgEAIQIAAAAaACAIAAAnACAMYQEAqQEAIWRAAKoBACF0AQCpAQAhdQEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIX8AALgBfyKAAUAAuQEAIYEBQACqAQAhhQEBAKkBACGGAQIAsgEAIQIAAAAdACAIAAApACACAAAAHQAgCAAAKQAgAwAAABoAIA8AACIAIBAAACcAIAEAAAAaACABAAAAHQAgBxUAAMoBACAWAADNAQAgFwAAzAEAICgAAMsBACApAADOAQAgeAAAqwEAIIABAACrAQAgD14AAKIBADBfAAAwABBgAACiAQAwYQEAgQEAIWRAAIIBACF0AQCBAQAhdQEAgQEAIXcBAIEBACF4AQCMAQAheQEAgQEAIX8AAJQBfyKAAUAAlQEAIYEBQACCAQAhhQEBAIEBACGGAQIAjQEAIQMAAAAdACADAAAvADAUAAAwACADAAAAHQAgAwAAHgAwBAAAGgAgEy0AAJ4BACBeAACaAQAwXwAAOwAQYAAAmgEAMGEBAAAAAWRAAIoBACF0AQAAAAF1AQCJAQAhdgEAiQEAIXcBAIkBACF4AQCbAQAheQEAiQEAIXpAAIoBACF7AQCJAQAhfAEAiQEAIX0BAJsBACF_AACcAX8igAFAAJ0BACGBAUAAigEAIQEAAAAzACALLAAAoQEAIF4AAJ8BADBfAAA1ABBgAACfAQAwYQEAiQEAIWIBAIkBACFkQACKAQAhcAEAiQEAIXEBAIkBACFyAQCbAQAhcwIAoAEAIQIsAADJAQAgcgAAqwEAIAssAAChAQAgXgAAnwEAMF8AADUAEGAAAJ8BADBhAQAAAAFiAQCJAQAhZEAAigEAIXABAIkBACFxAQCJAQAhcgEAmwEAIXMCAKABACEDAAAANQAgAwAANgAwBAAANwAgAQAAADUAIAEAAAAzACATLQAAngEAIF4AAJoBADBfAAA7ABBgAACaAQAwYQEAiQEAIWRAAIoBACF0AQCJAQAhdQEAiQEAIXYBAIkBACF3AQCJAQAheAEAmwEAIXkBAIkBACF6QACKAQAhewEAiQEAIXwBAIkBACF9AQCbAQAhfwAAnAF_IoABQACdAQAhgQFAAIoBACEELQAAyAEAIHgAAKsBACB9AACrAQAggAEAAKsBACADAAAAOwAgAwAAPAAwBAAAMwAgAwAAADsAIAMAADwAMAQAADMAIAMAAAA7ACADAAA8ADAEAAAzACAQLQAAxwEAIGEBAAAAAWRAAAAAAXQBAAAAAXUBAAAAAXYBAAAAAXcBAAAAAXgBAAAAAXkBAAAAAXpAAAAAAXsBAAAAAXwBAAAAAX0BAAAAAX8AAAB_AoABQAAAAAGBAUAAAAABAQgAAEAAIA9hAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF2AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF6QAAAAAF7AQAAAAF8AQAAAAF9AQAAAAF_AAAAfwKAAUAAAAABgQFAAAAAAQEIAABCADABCAAAQgAwEC0AALoBACBhAQCpAQAhZEAAqgEAIXQBAKkBACF1AQCpAQAhdgEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIXpAAKoBACF7AQCpAQAhfAEAqQEAIX0BALEBACF_AAC4AX8igAFAALkBACGBAUAAqgEAIQIAAAAzACAIAABFACAPYQEAqQEAIWRAAKoBACF0AQCpAQAhdQEAqQEAIXYBAKkBACF3AQCpAQAheAEAsQEAIXkBAKkBACF6QACqAQAhewEAqQEAIXwBAKkBACF9AQCxAQAhfwAAuAF_IoABQAC5AQAhgQFAAKoBACECAAAAOwAgCAAARwAgAgAAADsAIAgAAEcAIAMAAAAzACAPAABAACAQAABFACABAAAAMwAgAQAAADsAIAYVAAC1AQAgFgAAtwEAIBcAALYBACB4AACrAQAgfQAAqwEAIIABAACrAQAgEl4AAJMBADBfAABOABBgAACTAQAwYQEAgQEAIWRAAIIBACF0AQCBAQAhdQEAgQEAIXYBAIEBACF3AQCBAQAheAEAjAEAIXkBAIEBACF6QACCAQAhewEAgQEAIXwBAIEBACF9AQCMAQAhfwAAlAF_IoABQACVAQAhgQFAAIIBACEDAAAAOwAgAwAATQAwFAAATgAgAwAAADsAIAMAADwAMAQAADMAIAEAAAA3ACABAAAANwAgAwAAADUAIAMAADYAMAQAADcAIAMAAAA1ACADAAA2ADAEAAA3ACADAAAANQAgAwAANgAwBAAANwAgCCwAALQBACBhAQAAAAFiAQAAAAFkQAAAAAFwAQAAAAFxAQAAAAFyAQAAAAFzAgAAAAEBCAAAVgAgB2EBAAAAAWIBAAAAAWRAAAAAAXABAAAAAXEBAAAAAXIBAAAAAXMCAAAAAQEIAABYADABCAAAWAAwCCwAALMBACBhAQCpAQAhYgEAqQEAIWRAAKoBACFwAQCpAQAhcQEAqQEAIXIBALEBACFzAgCyAQAhAgAAADcAIAgAAFsAIAdhAQCpAQAhYgEAqQEAIWRAAKoBACFwAQCpAQAhcQEAqQEAIXIBALEBACFzAgCyAQAhAgAAADUAIAgAAF0AIAIAAAA1ACAIAABdACADAAAANwAgDwAAVgAgEAAAWwAgAQAAADcAIAEAAAA1ACAGFQAArAEAIBYAAK8BACAXAACuAQAgKAAArQEAICkAALABACByAACrAQAgCl4AAIsBADBfAABkABBgAACLAQAwYQEAgQEAIWIBAIEBACFkQACCAQAhcAEAgQEAIXEBAIEBACFyAQCMAQAhcwIAjQEAIQMAAAA1ACADAABjADAUAABkACADAAAANQAgAwAANgAwBAAANwAgB14AAIgBADBfAABqABBgAACIAQAwYQEAAAABYgEAAAABYwEAAAABZEAAigEAIQEAAABnACABAAAAZwAgB14AAIgBADBfAABqABBgAACIAQAwYQEAiQEAIWIBAIkBACFjAQCJAQAhZEAAigEAIQADAAAAagAgAwAAawAwBAAAZwAgAwAAAGoAIAMAAGsAMAQAAGcAIAMAAABqACADAABrADAEAABnACAEYQEAAAABYgEAAAABYwEAAAABZEAAAAABAQgAAG8AIARhAQAAAAFiAQAAAAFjAQAAAAFkQAAAAAEBCAAAcQAwAQgAAHEAMARhAQCpAQAhYgEAqQEAIWMBAKkBACFkQACqAQAhAgAAAGcAIAgAAHQAIARhAQCpAQAhYgEAqQEAIWMBAKkBACFkQACqAQAhAgAAAGoAIAgAAHYAIAIAAABqACAIAAB2ACADAAAAZwAgDwAAbwAgEAAAdAAgAQAAAGcAIAEAAABqACADFQAApgEAIBYAAKgBACAXAACnAQAgB14AAIABADBfAAB9ABBgAACAAQAwYQEAgQEAIWIBAIEBACFjAQCBAQAhZEAAggEAIQMAAABqACADAAB8ADAUAAB9ACADAAAAagAgAwAAawAwBAAAZwAgB14AAIABADBfAAB9ABBgAACAAQAwYQEAgQEAIWIBAIEBACFjAQCBAQAhZEAAggEAIQ4VAACEAQAgFgAAhwEAIBcAAIcBACBlAQAAAAFmAQAAAARnAQAAAARoAQAAAAFpAQAAAAFqAQAAAAFrAQAAAAFsAQCGAQAhbQEAAAABbgEAAAABbwEAAAABCxUAAIQBACAWAACFAQAgFwAAhQEAIGVAAAAAAWZAAAAABGdAAAAABGhAAAAAAWlAAAAAAWpAAAAAAWtAAAAAAWxAAIMBACELFQAAhAEAIBYAAIUBACAXAACFAQAgZUAAAAABZkAAAAAEZ0AAAAAEaEAAAAABaUAAAAABakAAAAABa0AAAAABbEAAgwEAIQhlAgAAAAFmAgAAAARnAgAAAARoAgAAAAFpAgAAAAFqAgAAAAFrAgAAAAFsAgCEAQAhCGVAAAAAAWZAAAAABGdAAAAABGhAAAAAAWlAAAAAAWpAAAAAAWtAAAAAAWxAAIUBACEOFQAAhAEAIBYAAIcBACAXAACHAQAgZQEAAAABZgEAAAAEZwEAAAAEaAEAAAABaQEAAAABagEAAAABawEAAAABbAEAhgEAIW0BAAAAAW4BAAAAAW8BAAAAAQtlAQAAAAFmAQAAAARnAQAAAARoAQAAAAFpAQAAAAFqAQAAAAFrAQAAAAFsAQCHAQAhbQEAAAABbgEAAAABbwEAAAABB14AAIgBADBfAABqABBgAACIAQAwYQEAiQEAIWIBAIkBACFjAQCJAQAhZEAAigEAIQtlAQAAAAFmAQAAAARnAQAAAARoAQAAAAFpAQAAAAFqAQAAAAFrAQAAAAFsAQCHAQAhbQEAAAABbgEAAAABbwEAAAABCGVAAAAAAWZAAAAABGdAAAAABGhAAAAAAWlAAAAAAWpAAAAAAWtAAAAAAWxAAIUBACEKXgAAiwEAMF8AAGQAEGAAAIsBADBhAQCBAQAhYgEAgQEAIWRAAIIBACFwAQCBAQAhcQEAgQEAIXIBAIwBACFzAgCNAQAhDhUAAJEBACAWAACSAQAgFwAAkgEAIGUBAAAAAWYBAAAABWcBAAAABWgBAAAAAWkBAAAAAWoBAAAAAWsBAAAAAWwBAJABACFtAQAAAAFuAQAAAAFvAQAAAAENFQAAhAEAIBYAAIQBACAXAACEAQAgKAAAjwEAICkAAIQBACBlAgAAAAFmAgAAAARnAgAAAARoAgAAAAFpAgAAAAFqAgAAAAFrAgAAAAFsAgCOAQAhDRUAAIQBACAWAACEAQAgFwAAhAEAICgAAI8BACApAACEAQAgZQIAAAABZgIAAAAEZwIAAAAEaAIAAAABaQIAAAABagIAAAABawIAAAABbAIAjgEAIQhlCAAAAAFmCAAAAARnCAAAAARoCAAAAAFpCAAAAAFqCAAAAAFrCAAAAAFsCACPAQAhDhUAAJEBACAWAACSAQAgFwAAkgEAIGUBAAAAAWYBAAAABWcBAAAABWgBAAAAAWkBAAAAAWoBAAAAAWsBAAAAAWwBAJABACFtAQAAAAFuAQAAAAFvAQAAAAEIZQIAAAABZgIAAAAFZwIAAAAFaAIAAAABaQIAAAABagIAAAABawIAAAABbAIAkQEAIQtlAQAAAAFmAQAAAAVnAQAAAAVoAQAAAAFpAQAAAAFqAQAAAAFrAQAAAAFsAQCSAQAhbQEAAAABbgEAAAABbwEAAAABEl4AAJMBADBfAABOABBgAACTAQAwYQEAgQEAIWRAAIIBACF0AQCBAQAhdQEAgQEAIXYBAIEBACF3AQCBAQAheAEAjAEAIXkBAIEBACF6QACCAQAhewEAgQEAIXwBAIEBACF9AQCMAQAhfwAAlAF_IoABQACVAQAhgQFAAIIBACEHFQAAhAEAIBYAAJkBACAXAACZAQAgZQAAAH8CZgAAAH8IZwAAAH8IbAAAmAF_IgsVAACRAQAgFgAAlwEAIBcAAJcBACBlQAAAAAFmQAAAAAVnQAAAAAVoQAAAAAFpQAAAAAFqQAAAAAFrQAAAAAFsQACWAQAhCxUAAJEBACAWAACXAQAgFwAAlwEAIGVAAAAAAWZAAAAABWdAAAAABWhAAAAAAWlAAAAAAWpAAAAAAWtAAAAAAWxAAJYBACEIZUAAAAABZkAAAAAFZ0AAAAAFaEAAAAABaUAAAAABakAAAAABa0AAAAABbEAAlwEAIQcVAACEAQAgFgAAmQEAIBcAAJkBACBlAAAAfwJmAAAAfwhnAAAAfwhsAACYAX8iBGUAAAB_AmYAAAB_CGcAAAB_CGwAAJkBfyITLQAAngEAIF4AAJoBADBfAAA7ABBgAACaAQAwYQEAiQEAIWRAAIoBACF0AQCJAQAhdQEAiQEAIXYBAIkBACF3AQCJAQAheAEAmwEAIXkBAIkBACF6QACKAQAhewEAiQEAIXwBAIkBACF9AQCbAQAhfwAAnAF_IoABQACdAQAhgQFAAIoBACELZQEAAAABZgEAAAAFZwEAAAAFaAEAAAABaQEAAAABagEAAAABawEAAAABbAEAkgEAIW0BAAAAAW4BAAAAAW8BAAAAAQRlAAAAfwJmAAAAfwhnAAAAfwhsAACZAX8iCGVAAAAAAWZAAAAABWdAAAAABWhAAAAAAWlAAAAAAWpAAAAAAWtAAAAAAWxAAJcBACEDggEAADUAIIMBAAA1ACCEAQAANQAgCywAAKEBACBeAACfAQAwXwAANQAQYAAAnwEAMGEBAIkBACFiAQCJAQAhZEAAigEAIXABAIkBACFxAQCJAQAhcgEAmwEAIXMCAKABACEIZQIAAAABZgIAAAAEZwIAAAAEaAIAAAABaQIAAAABagIAAAABawIAAAABbAIAhAEAIRUtAACeAQAgXgAAmgEAMF8AADsAEGAAAJoBADBhAQCJAQAhZEAAigEAIXQBAIkBACF1AQCJAQAhdgEAiQEAIXcBAIkBACF4AQCbAQAheQEAiQEAIXpAAIoBACF7AQCJAQAhfAEAiQEAIX0BAJsBACF_AACcAX8igAFAAJ0BACGBAUAAigEAIYkBAAA7ACCKAQAAOwAgD14AAKIBADBfAAAwABBgAACiAQAwYQEAgQEAIWRAAIIBACF0AQCBAQAhdQEAgQEAIXcBAIEBACF4AQCMAQAheQEAgQEAIX8AAJQBfyKAAUAAlQEAIYEBQACCAQAhhQEBAIEBACGGAQIAjQEAIQ9eAACjAQAwXwAAHQAQYAAAowEAMGEBAIkBACFkQACKAQAhdAEAiQEAIXUBAIkBACF3AQCJAQAheAEAmwEAIXkBAIkBACF_AACcAX8igAFAAJ0BACGBAUAAigEAIYUBAQCJAQAhhgECAKABACEHXgAApAEAMF8AABcAEGAAAKQBADBhAQCBAQAhZEAAggEAIYcBAQCBAQAhiAEBAIEBACEHXgAApQEAMF8AAAQAEGAAAKUBADBhAQCJAQAhZEAAigEAIYcBAQCJAQAhiAEBAIkBACEAAAABjgEBAAAAAQGOAUAAAAABAAAAAAAAAY4BAQAAAAEFjgECAAAAAZQBAgAAAAGVAQIAAAABlgECAAAAAZcBAgAAAAEFDwAA0wEAIBAAANYBACCLAQAA1AEAIIwBAADVAQAgkQEAADMAIAMPAADTAQAgiwEAANQBACCRAQAAMwAgAAAAAY4BAAAAfwIBjgFAAAAAAQsPAAC7AQAwEAAAwAEAMIsBAAC8AQAwjAEAAL0BADCNAQAAvgEAII4BAAC_AQAwjwEAAL8BADCQAQAAvwEAMJEBAAC_AQAwkgEAAMEBADCTAQAAwgEAMAZhAQAAAAFiAQAAAAFkQAAAAAFxAQAAAAFyAQAAAAFzAgAAAAECAAAANwAgDwAAxgEAIAMAAAA3ACAPAADGAQAgEAAAxQEAIAEIAADSAQAwCywAAKEBACBeAACfAQAwXwAANQAQYAAAnwEAMGEBAAAAAWIBAIkBACFkQACKAQAhcAEAiQEAIXEBAIkBACFyAQCbAQAhcwIAoAEAIQIAAAA3ACAIAADFAQAgAgAAAMMBACAIAADEAQAgCl4AAMIBADBfAADDAQAQYAAAwgEAMGEBAIkBACFiAQCJAQAhZEAAigEAIXABAIkBACFxAQCJAQAhcgEAmwEAIXMCAKABACEKXgAAwgEAMF8AAMMBABBgAADCAQAwYQEAiQEAIWIBAIkBACFkQACKAQAhcAEAiQEAIXEBAIkBACFyAQCbAQAhcwIAoAEAIQZhAQCpAQAhYgEAqQEAIWRAAKoBACFxAQCpAQAhcgEAsQEAIXMCALIBACEGYQEAqQEAIWIBAKkBACFkQACqAQAhcQEAqQEAIXIBALEBACFzAgCyAQAhBmEBAAAAAWIBAAAAAWRAAAAAAXEBAAAAAXIBAAAAAXMCAAAAAQQPAAC7AQAwiwEAALwBADCNAQAAvgEAIJEBAAC_AQAwAAQtAADIAQAgeAAAqwEAIH0AAKsBACCAAQAAqwEAIAAAAAAAAAAABmEBAAAAAWIBAAAAAWRAAAAAAXEBAAAAAXIBAAAAAXMCAAAAAQ9hAQAAAAFkQAAAAAF0AQAAAAF1AQAAAAF2AQAAAAF3AQAAAAF4AQAAAAF5AQAAAAF6QAAAAAF7AQAAAAF8AQAAAAF9AQAAAAF_AAAAfwKAAUAAAAABgQFAAAAAAQIAAAAzACAPAADTAQAgAwAAADsAIA8AANMBACAQAADXAQAgEQAAADsAIAgAANcBACBhAQCpAQAhZEAAqgEAIXQBAKkBACF1AQCpAQAhdgEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIXpAAKoBACF7AQCpAQAhfAEAqQEAIX0BALEBACF_AAC4AX8igAFAALkBACGBAUAAqgEAIQ9hAQCpAQAhZEAAqgEAIXQBAKkBACF1AQCpAQAhdgEAqQEAIXcBAKkBACF4AQCxAQAheQEAqQEAIXpAAKoBACF7AQCpAQAhfAEAqQEAIX0BALEBACF_AAC4AX8igAFAALkBACGBAUAAqgEAIQAAAAADFQAGFgAHFwAIAAAAAxUABhYABxcACAAAAAUVAA4WABEXABIoAA8pABAAAAAAAAUVAA4WABEXABIoAA8pABACFQAWLTgVASwAFAEtOQAAAAMVABoWABsXABwAAAADFQAaFgAbFwAcASwAFAEsABQFFQAhFgAkFwAlKAAiKQAjAAAAAAAFFQAhFgAkFwAlKAAiKQAjAAAAAxUAKxYALBcALQAAAAMVACsWACwXAC0BAgECAwEFBgEGBwEHCAEJCgEKDAILDQMMDwENEQIOEgQREwESFAETFQIYGAUZGQkaGwobHAocHwodIAoeIQofIwogJQIhJgsiKAojKgIkKwwlLAomLQonLgIqMQ0rMhMuNBQvOhQwPRQxPhQyPxQzQRQ0QwI1RBc2RhQ3SAI4SRg5ShQ6SxQ7TAI8Txk9UB0-URU_UhVAUxVBVBVCVRVDVxVEWQJFWh5GXBVHXgJIXx9JYBVKYRVLYgJMZSBNZiZOaCdPaSdQbCdRbSdSbidTcCdUcgJVcyhWdSdXdwJYeClZeSdaeidbewJcfipdfy4"
+ }
+ 
+ async function decodeBase64AsWasm(wasmBase64: string): Promise<WebAssembly.Module> {
+diff --git a/arrobe-site/prisma/generated/client/internal/prismaNamespace.ts b/arrobe-site/prisma/generated/client/internal/prismaNamespace.ts
+index 2b7a44f..e5f4cfb 100644
+--- a/arrobe-site/prisma/generated/client/internal/prismaNamespace.ts
++++ b/arrobe-site/prisma/generated/client/internal/prismaNamespace.ts
+@@ -871,6 +871,7 @@ export const EventScalarFieldEnum = {
+   organizer: 'organizer',
+   recap: 'recap',
+   status: 'status',
++  publishedAt: 'publishedAt',
+   createdAt: 'createdAt',
+   updatedAt: 'updatedAt'
+ } as const
+diff --git a/arrobe-site/prisma/generated/client/internal/prismaNamespaceBrowser.ts b/arrobe-site/prisma/generated/client/internal/prismaNamespaceBrowser.ts
+index 44e41c0..b1d566b 100644
+--- a/arrobe-site/prisma/generated/client/internal/prismaNamespaceBrowser.ts
++++ b/arrobe-site/prisma/generated/client/internal/prismaNamespaceBrowser.ts
+@@ -115,6 +115,7 @@ export const EventScalarFieldEnum = {
+   organizer: 'organizer',
+   recap: 'recap',
+   status: 'status',
++  publishedAt: 'publishedAt',
+   createdAt: 'createdAt',
+   updatedAt: 'updatedAt'
+ } as const
+diff --git a/arrobe-site/prisma/generated/client/models/Event.ts b/arrobe-site/prisma/generated/client/models/Event.ts
+index ed0eb64..b0e2264 100644
+--- a/arrobe-site/prisma/generated/client/models/Event.ts
++++ b/arrobe-site/prisma/generated/client/models/Event.ts
+@@ -37,6 +37,7 @@ export type EventMinAggregateOutputType = {
+   organizer: string | null
+   recap: string | null
+   status: $Enums.Status | null
++  publishedAt: Date | null
+   createdAt: Date | null
+   updatedAt: Date | null
+ }
+@@ -54,6 +55,7 @@ export type EventMaxAggregateOutputType = {
+   organizer: string | null
+   recap: string | null
+   status: $Enums.Status | null
++  publishedAt: Date | null
+   createdAt: Date | null
+   updatedAt: Date | null
+ }
+@@ -71,6 +73,7 @@ export type EventCountAggregateOutputType = {
+   organizer: number
+   recap: number
+   status: number
++  publishedAt: number
+   createdAt: number
+   updatedAt: number
+   _all: number
+@@ -90,6 +93,7 @@ export type EventMinAggregateInputType = {
+   organizer?: true
+   recap?: true
+   status?: true
++  publishedAt?: true
+   createdAt?: true
+   updatedAt?: true
+ }
+@@ -107,6 +111,7 @@ export type EventMaxAggregateInputType = {
+   organizer?: true
+   recap?: true
+   status?: true
++  publishedAt?: true
+   createdAt?: true
+   updatedAt?: true
+ }
+@@ -124,6 +129,7 @@ export type EventCountAggregateInputType = {
+   organizer?: true
+   recap?: true
+   status?: true
++  publishedAt?: true
+   createdAt?: true
+   updatedAt?: true
+   _all?: true
+@@ -214,6 +220,7 @@ export type EventGroupByOutputType = {
+   organizer: string
+   recap: string | null
+   status: $Enums.Status
++  publishedAt: Date | null
+   createdAt: Date
+   updatedAt: Date
+   _count: EventCountAggregateOutputType | null
+@@ -252,6 +259,7 @@ export type EventWhereInput = {
+   organizer?: Prisma.StringFilter<"Event"> | string
+   recap?: Prisma.StringNullableFilter<"Event"> | string | null
+   status?: Prisma.EnumStatusFilter<"Event"> | $Enums.Status
++  publishedAt?: Prisma.DateTimeNullableFilter<"Event"> | Date | string | null
+   createdAt?: Prisma.DateTimeFilter<"Event"> | Date | string
+   updatedAt?: Prisma.DateTimeFilter<"Event"> | Date | string
+   registrations?: Prisma.RegistrationListRelationFilter
+@@ -270,6 +278,7 @@ export type EventOrderByWithRelationInput = {
+   organizer?: Prisma.SortOrder
+   recap?: Prisma.SortOrderInput | Prisma.SortOrder
+   status?: Prisma.SortOrder
++  publishedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+   createdAt?: Prisma.SortOrder
+   updatedAt?: Prisma.SortOrder
+   registrations?: Prisma.RegistrationOrderByRelationAggregateInput
+@@ -291,6 +300,7 @@ export type EventWhereUniqueInput = Prisma.AtLeast<{
+   organizer?: Prisma.StringFilter<"Event"> | string
+   recap?: Prisma.StringNullableFilter<"Event"> | string | null
+   status?: Prisma.EnumStatusFilter<"Event"> | $Enums.Status
++  publishedAt?: Prisma.DateTimeNullableFilter<"Event"> | Date | string | null
+   createdAt?: Prisma.DateTimeFilter<"Event"> | Date | string
+   updatedAt?: Prisma.DateTimeFilter<"Event"> | Date | string
+   registrations?: Prisma.RegistrationListRelationFilter
+@@ -309,6 +319,7 @@ export type EventOrderByWithAggregationInput = {
+   organizer?: Prisma.SortOrder
+   recap?: Prisma.SortOrderInput | Prisma.SortOrder
+   status?: Prisma.SortOrder
++  publishedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+   createdAt?: Prisma.SortOrder
+   updatedAt?: Prisma.SortOrder
+   _count?: Prisma.EventCountOrderByAggregateInput
+@@ -332,6 +343,7 @@ export type EventScalarWhereWithAggregatesInput = {
+   organizer?: Prisma.StringWithAggregatesFilter<"Event"> | string
+   recap?: Prisma.StringNullableWithAggregatesFilter<"Event"> | string | null
+   status?: Prisma.EnumStatusWithAggregatesFilter<"Event"> | $Enums.Status
++  publishedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Event"> | Date | string | null
+   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Event"> | Date | string
+   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Event"> | Date | string
+ }
+@@ -349,6 +361,7 @@ export type EventCreateInput = {
+   organizer: string
+   recap?: string | null
+   status?: $Enums.Status
++  publishedAt?: Date | string | null
+   createdAt?: Date | string
+   updatedAt?: Date | string
+   registrations?: Prisma.RegistrationCreateNestedManyWithoutEventInput
+@@ -367,6 +380,7 @@ export type EventUncheckedCreateInput = {
+   organizer: string
+   recap?: string | null
+   status?: $Enums.Status
++  publishedAt?: Date | string | null
+   createdAt?: Date | string
+   updatedAt?: Date | string
+   registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutEventInput
+@@ -385,6 +399,7 @@ export type EventUpdateInput = {
+   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+   recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
++  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   registrations?: Prisma.RegistrationUpdateManyWithoutEventNestedInput
+@@ -403,6 +418,7 @@ export type EventUncheckedUpdateInput = {
+   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+   recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
++  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutEventNestedInput
+@@ -421,6 +437,7 @@ export type EventCreateManyInput = {
+   organizer: string
+   recap?: string | null
+   status?: $Enums.Status
++  publishedAt?: Date | string | null
+   createdAt?: Date | string
+   updatedAt?: Date | string
+ }
+@@ -438,6 +455,7 @@ export type EventUpdateManyMutationInput = {
+   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+   recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
++  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+ }
+@@ -455,6 +473,7 @@ export type EventUncheckedUpdateManyInput = {
+   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+   recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
++  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+ }
+@@ -472,6 +491,7 @@ export type EventCountOrderByAggregateInput = {
+   organizer?: Prisma.SortOrder
+   recap?: Prisma.SortOrder
+   status?: Prisma.SortOrder
++  publishedAt?: Prisma.SortOrder
+   createdAt?: Prisma.SortOrder
+   updatedAt?: Prisma.SortOrder
+ }
+@@ -489,6 +509,7 @@ export type EventMaxOrderByAggregateInput = {
+   organizer?: Prisma.SortOrder
+   recap?: Prisma.SortOrder
+   status?: Prisma.SortOrder
++  publishedAt?: Prisma.SortOrder
+   createdAt?: Prisma.SortOrder
+   updatedAt?: Prisma.SortOrder
+ }
+@@ -506,6 +527,7 @@ export type EventMinOrderByAggregateInput = {
+   organizer?: Prisma.SortOrder
+   recap?: Prisma.SortOrder
+   status?: Prisma.SortOrder
++  publishedAt?: Prisma.SortOrder
+   createdAt?: Prisma.SortOrder
+   updatedAt?: Prisma.SortOrder
+ }
+@@ -542,6 +564,7 @@ export type EventCreateWithoutRegistrationsInput = {
+   organizer: string
+   recap?: string | null
+   status?: $Enums.Status
++  publishedAt?: Date | string | null
+   createdAt?: Date | string
+   updatedAt?: Date | string
+ }
+@@ -559,6 +582,7 @@ export type EventUncheckedCreateWithoutRegistrationsInput = {
+   organizer: string
+   recap?: string | null
+   status?: $Enums.Status
++  publishedAt?: Date | string | null
+   createdAt?: Date | string
+   updatedAt?: Date | string
+ }
+@@ -592,6 +616,7 @@ export type EventUpdateWithoutRegistrationsInput = {
+   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+   recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
++  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+ }
+@@ -609,6 +634,7 @@ export type EventUncheckedUpdateWithoutRegistrationsInput = {
+   organizer?: Prisma.StringFieldUpdateOperationsInput | string
+   recap?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+   status?: Prisma.EnumStatusFieldUpdateOperationsInput | $Enums.Status
++  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+ }
+@@ -657,6 +683,7 @@ export type EventSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
+   organizer?: boolean
+   recap?: boolean
+   status?: boolean
++  publishedAt?: boolean
+   createdAt?: boolean
+   updatedAt?: boolean
+   registrations?: boolean | Prisma.Event$registrationsArgs<ExtArgs>
+@@ -676,6 +703,7 @@ export type EventSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensi
+   organizer?: boolean
+   recap?: boolean
+   status?: boolean
++  publishedAt?: boolean
+   createdAt?: boolean
+   updatedAt?: boolean
+ }, ExtArgs["result"]["event"]>
+@@ -693,6 +721,7 @@ export type EventSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensi
+   organizer?: boolean
+   recap?: boolean
+   status?: boolean
++  publishedAt?: boolean
+   createdAt?: boolean
+   updatedAt?: boolean
+ }, ExtArgs["result"]["event"]>
+@@ -710,11 +739,12 @@ export type EventSelectScalar = {
+   organizer?: boolean
+   recap?: boolean
+   status?: boolean
++  publishedAt?: boolean
+   createdAt?: boolean
+   updatedAt?: boolean
+ }
+ 
+-export type EventOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "slug" | "title" | "description" | "content" | "image" | "category" | "date" | "location" | "organizer" | "recap" | "status" | "createdAt" | "updatedAt", ExtArgs["result"]["event"]>
++export type EventOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "slug" | "title" | "description" | "content" | "image" | "category" | "date" | "location" | "organizer" | "recap" | "status" | "publishedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["event"]>
+ export type EventInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+   registrations?: boolean | Prisma.Event$registrationsArgs<ExtArgs>
+   _count?: boolean | Prisma.EventCountOutputTypeDefaultArgs<ExtArgs>
+@@ -740,6 +770,7 @@ export type $EventPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
+     organizer: string
+     recap: string | null
+     status: $Enums.Status
++    publishedAt: Date | null
+     createdAt: Date
+     updatedAt: Date
+   }, ExtArgs["result"]["event"]>
+@@ -1178,6 +1209,7 @@ export interface EventFieldRefs {
+   readonly organizer: Prisma.FieldRef<"Event", 'String'>
+   readonly recap: Prisma.FieldRef<"Event", 'String'>
+   readonly status: Prisma.FieldRef<"Event", 'Status'>
++  readonly publishedAt: Prisma.FieldRef<"Event", 'DateTime'>
+   readonly createdAt: Prisma.FieldRef<"Event", 'DateTime'>
+   readonly updatedAt: Prisma.FieldRef<"Event", 'DateTime'>
+ }
+diff --git a/arrobe-site/prisma/import-events.js b/arrobe-site/prisma/import-events.js
+index a0fc225..a32b395 100644
+--- a/arrobe-site/prisma/import-events.js
++++ b/arrobe-site/prisma/import-events.js
+@@ -89,7 +89,9 @@ async function main() {
+     const saved = await prisma.event.upsert({
+       where: { slug: event.slug },
+       update: event,
+-      create: { ...event, status: "PUBLISHED" },
++      // publishedAt renseignée : sans elle, la prochaine modification
++      // dans l'administration prendrait l'événement pour une nouveauté.
++      create: { ...event, status: "PUBLISHED", publishedAt: new Date() },
+     });
+ 
+     const when = saved.date.toLocaleDateString("fr-FR", {
+diff --git a/arrobe-site/prisma/migrations/20260917090000_add_event_published_at/migration.sql b/arrobe-site/prisma/migrations/20260917090000_add_event_published_at/migration.sql
+new file mode 100644
+index 0000000..bf4467e
+--- /dev/null
++++ b/arrobe-site/prisma/migrations/20260917090000_add_event_published_at/migration.sql
+@@ -0,0 +1,10 @@
++-- AlterTable
++-- Date de première publication d'un événement, sur le modèle des
++-- articles. Sert à n'annoncer un événement qu'une fois à la newsletter.
++ALTER TABLE "events" ADD COLUMN "publishedAt" TIMESTAMP(3);
++
++-- Rattrapage des événements DÉJÀ publiés : sans date, ils seraient
++-- pris pour des nouveautés à leur prochaine modification dans
++-- l'administration, et annoncés à tous les abonnés. La date de
++-- création est la meilleure approximation disponible.
++UPDATE "events" SET "publishedAt" = "createdAt" WHERE "status" = 'PUBLISHED';
+diff --git a/arrobe-site/prisma/schema.prisma b/arrobe-site/prisma/schema.prisma
+index e3633d3..b514ec1 100644
+--- a/arrobe-site/prisma/schema.prisma
++++ b/arrobe-site/prisma/schema.prisma
+@@ -114,6 +114,13 @@ model Event {
+   recap       String?  @db.Text
+ 
+   status      Status   @default(DRAFT)
++
++  // Renseignée à la PREMIÈRE publication, jamais effacée ensuite —
++  // même principe que pour les articles. Sert à n'annoncer un
++  // événement aux abonnés de la newsletter qu'une seule fois : un
++  // passage en brouillon puis retour en publié ne renvoie pas de mail.
++  publishedAt DateTime?
++
+   createdAt   DateTime @default(now())
+   updatedAt   DateTime @updatedAt
+ 

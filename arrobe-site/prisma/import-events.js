@@ -89,7 +89,9 @@ async function main() {
     const saved = await prisma.event.upsert({
       where: { slug: event.slug },
       update: event,
-      create: { ...event, status: "PUBLISHED" },
+      // publishedAt renseignée : sans elle, la prochaine modification
+      // dans l'administration prendrait l'événement pour une nouveauté.
+      create: { ...event, status: "PUBLISHED", publishedAt: new Date() },
     });
 
     const when = saved.date.toLocaleDateString("fr-FR", {

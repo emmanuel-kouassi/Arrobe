@@ -114,6 +114,13 @@ model Event {
   recap       String?  @db.Text
 
   status      Status   @default(DRAFT)
+
+  // Renseignée à la PREMIÈRE publication, jamais effacée ensuite —
+  // même principe que pour les articles. Sert à n'annoncer un
+  // événement aux abonnés de la newsletter qu'une seule fois : un
+  // passage en brouillon puis retour en publié ne renvoie pas de mail.
+  publishedAt DateTime?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

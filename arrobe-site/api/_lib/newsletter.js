@@ -34,6 +34,8 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { waitUntil } from "@vercel/functions";
+
 import { prisma } from "./prisma.js";
 import { escapeHtml } from "./html.js";
 
@@ -414,4 +416,69 @@ export async function notifySubscribers({ type, title, excerpt, url } = {}) {
   }
 
   return summary;
+}
+
+/* ------------------------------------------------------------------
+   Déclenchement depuis une route de publication
+   ------------------------------------------------------------------ */
+
+/**
+ * Annonce une publication aux abonnés SANS faire attendre la réponse
+ * HTTP, et sans jamais pouvoir la faire échouer.
+ *
+ *   announcePublication({ type: "article", title, excerpt, url });
+ *   return sendJson(res, 200, { article });   // part immédiatement
+ *
+ * Sur Vercel, une fonction est gelée dès que sa réponse est envoyée :
+ * un envoi lancé « en tâche de fond » serait coupé en route.
+ * waitUntil() demande à Vercel de laisser vivre la fonction jusqu'à la
+ * fin des envois — dans la limite de sa durée maximale d'exécution.
+ * Hors Vercel (serveur local, o2switch), waitUntil() ne fait rien : le
+ * processus Node reste en vie et l'envoi se termine normalement.
+ *
+ * Toute erreur est journalisée ici et jamais propagée : la publication
+ * est déjà enregistrée en base quand on arrive à cet appel.
+ */
+export function announcePublication(publication) {
+  let task;
+  try {
+    task = notifySubscribers(publication).catch((error) => {
+      console.error("[newsletter] échec de l'annonce :", error);
+    });
+  } catch (error) {
+    console.error("[newsletter] impossible de lancer l'annonce :", error);
+    return;
+  }
+
+  try {
+    waitUntil(task);
+  } catch (error) {
+    // L'envoi est déjà parti ; seul le maintien en vie de la fonction
+    // Vercel n'a pas pu être demandé.
+    console.error("[newsletter] waitUntil indisponible :", error);
+  }
+}
+
+/**
+ * Annonce la première publication d'un événement.
+ *
+ * Un événement déjà passé n'est pas annoncé : publier une archive (la
+ * fête du village de l'an dernier, avec son compte rendu) enverrait
+ * sinon « Nouvel événement » pour une date révolue à tous les abonnés.
+ */
+export function announceEvent(event) {
+  if (!(event?.date instanceof Date) || event.date < new Date()) {
+    console.info(
+      `[newsletter] « ${event?.title} » est un événement passé : publié sans annonce aux abonnés.`
+    );
+    return;
+  }
+
+  announcePublication({
+    type: "event",
+    title: event.title,
+    excerpt: event.description,
+    // Relative : newsletter.js la complète avec SITE_URL.
+    url: `/#/evenement/${event.slug}`,
+  });
 }

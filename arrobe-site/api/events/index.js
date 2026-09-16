@@ -15,6 +15,7 @@ import { prisma } from "../_lib/prisma.js";
 import { readAdmin, requireAdmin } from "../_lib/auth.js";
 import { route, readJsonBody, sendJson, sendError, getQuery } from "../_lib/http.js";
 import { validateEvent, slugify } from "../_lib/validate.js";
+import { announceEvent } from "../_lib/newsletter.js";
 
 const LIST_FIELDS = {
   id: true,
@@ -73,8 +74,12 @@ async function createEvent(req, res) {
 
   const data = check.value;
   data.slug = data.slug ?? slugify(data.title);
+  data.publishedAt = data.status === "PUBLISHED" ? new Date() : null;
 
   const event = await prisma.event.create({ data });
+
+  // Créé directement avec le statut « Publié » : première publication.
+  if (event.status === "PUBLISHED") announceEvent(event);
 
   res.setHeader("Location", `/api/events/${event.slug}`);
   return sendJson(res, 201, { event });

@@ -9,6 +9,7 @@ import { prisma } from "../_lib/prisma.js";
 import { readAdmin, requireAdmin } from "../_lib/auth.js";
 import { route, readJsonBody, sendJson, sendError, getSlug } from "../_lib/http.js";
 import { validateArticle } from "../_lib/validate.js";
+import { announcePublication } from "../_lib/newsletter.js";
 
 async function getArticle(req, res) {
   const slug = getSlug(req);
@@ -45,11 +46,27 @@ async function updateArticle(req, res) {
   // déjà publié : on conserve la date d'origine, sinon un simple
   // passage en brouillon puis retour le ferait remonter en tête de
   // liste comme s'il était neuf.
-  if (data.status === "PUBLISHED" && !existing.publishedAt) {
+  const firstPublication = data.status === "PUBLISHED" && !existing.publishedAt;
+  if (firstPublication) {
     data.publishedAt = new Date();
   }
 
   const article = await prisma.article.update({ where: { slug }, data });
+
+  // Annonce aux abonnés, APRÈS l'écriture en base : si la mise à jour
+  // échoue, personne ne reçoit de mail pour un article resté brouillon.
+  // L'appel rend la main tout de suite et ne peut pas faire échouer la
+  // réponse (voir announcePublication).
+  if (firstPublication) {
+    announcePublication({
+      type: "article",
+      title: article.title,
+      excerpt: article.excerpt,
+      // Relative : newsletter.js la complète avec SITE_URL.
+      url: `/#/blog/${article.slug}`,
+    });
+  }
+
   return sendJson(res, 200, { article });
 }
 

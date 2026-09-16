@@ -16,6 +16,7 @@ import {
   getQuery,
 } from "../_lib/http.js";
 import { validateEvent } from "../_lib/validate.js";
+import { announceEvent } from "../_lib/newsletter.js";
 
 async function getEvent(req, res) {
   const slug = getSlug(req);
@@ -50,7 +51,21 @@ async function updateEvent(req, res) {
   const existing = await prisma.event.findUnique({ where: { slug } });
   if (!existing) return sendError(res, 404, "Événement introuvable.");
 
-  const event = await prisma.event.update({ where: { slug }, data: check.value });
+  const data = check.value;
+
+  // Première publication : on horodate, comme pour les articles. Une
+  // republication après passage en brouillon garde la date d'origine
+  // et n'est pas annoncée une seconde fois.
+  const firstPublication = data.status === "PUBLISHED" && !existing.publishedAt;
+  if (firstPublication) {
+    data.publishedAt = new Date();
+  }
+
+  const event = await prisma.event.update({ where: { slug }, data });
+
+  // Après l'écriture en base, sans attendre ni risquer la réponse.
+  if (firstPublication) announceEvent(event);
+
   return sendJson(res, 200, { event });
 }
 

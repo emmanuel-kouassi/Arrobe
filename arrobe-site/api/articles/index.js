@@ -14,6 +14,7 @@ import { prisma } from "../_lib/prisma.js";
 import { readAdmin, requireAdmin } from "../_lib/auth.js";
 import { route, readJsonBody, sendJson, sendError, getQuery } from "../_lib/http.js";
 import { validateArticle, slugify } from "../_lib/validate.js";
+import { announcePublication } from "../_lib/newsletter.js";
 
 /** Champs renvoyés en liste : inutile de transporter tout le HTML. */
 const LIST_FIELDS = {
@@ -64,6 +65,17 @@ async function createArticle(req, res) {
   data.publishedAt = data.status === "PUBLISHED" ? new Date() : null;
 
   const article = await prisma.article.create({ data });
+
+  // Créé directement avec le statut « Publié » : c'est aussi une
+  // première publication, à annoncer comme dans updateArticle.
+  if (article.status === "PUBLISHED") {
+    announcePublication({
+      type: "article",
+      title: article.title,
+      excerpt: article.excerpt,
+      url: `/#/blog/${article.slug}`,
+    });
+  }
 
   res.setHeader("Location", `/api/articles/${article.slug}`);
   return sendJson(res, 201, { article });
