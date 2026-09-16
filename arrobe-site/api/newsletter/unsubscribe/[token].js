@@ -26,23 +26,10 @@
 
 import { prisma } from "../../_lib/prisma.js";
 import { route, sendHtml, getQuery, getSlug } from "../../_lib/http.js";
+import { escapeHtml } from "../../_lib/html.js";
 
 /** Forme d'un jeton émis par crypto.randomUUID(). */
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/**
- * Échappement HTML. Indispensable pour l'adresse e-mail : la
- * validation d'inscription est permissive et laisse passer des
- * caractères comme < ou ".
- */
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 /**
  * Gabarit commun. `lead`, `note` et `actions` sont du HTML écrit dans
